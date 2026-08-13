@@ -24,7 +24,7 @@ export class AuthController{
     constructor(
         private readonly authService: AuthService,
         private readonly otpService: OtpService,
-        private readonly redis: Redis,
+       
     ){}
 
 
