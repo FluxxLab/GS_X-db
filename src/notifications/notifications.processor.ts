@@ -48,7 +48,7 @@ export class NotificationsProcessor extends WorkerHost {
         if(invalidTokens.length) await this.deviceTokens.delete({token: In(invalidTokens)});
 
         await this.notifications.update(notification.id, {sentAt: new Date()});
-        this.realtime.emitToRoom(Rooms.notifications, 'notification',{
+        this.realtime.emitToRoom(Rooms.notifications(notification.segment), 'notification', { 
             id: notification.id,
             title: notification.title,
             body: notification.body,

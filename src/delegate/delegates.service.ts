@@ -171,7 +171,7 @@ export class DelegatesService {
         return new Map(rows.map(r => [r.id, {name: r.name, organisation: r.organisation}]));
     }
 
-    asynx tagsFor(id: string): Promise<string[]>{
+    async tagsFor(id: string): Promise<string[]>{
         const d = await this.delegateRepository.findOne({
             where: {id},
             select: {tags: true},

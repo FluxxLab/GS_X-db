@@ -5,12 +5,11 @@ export const Rooms = {
     session: (id: string) => `session:${id}`,
     caption: (sessionId: string) => `captions:${sessionId}`,
     discussion: (sessionId: string) => `discussion:${sessionId}`,
-    voting: `voting`,
+    voting: 'voting',
     trivia: 'trivia',
     notifications: (segment: string) => `notifications:${segment}`,
-,
-
 } as const;
+
 
 
 @Injectable()
