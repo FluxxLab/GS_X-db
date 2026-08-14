@@ -24,6 +24,10 @@ import { AuditInterceptor } from './common/audit.interceptor';
 import { SecurityModule } from './security/security.module';
 import { AdminModule } from './admin/admin.module';
 import { LiveOpsModule } from './live-ops/live-ops.module';
+import { CaptionsModule } from './captions/captions.module';
+import { SearchModule } from './search/search.module';
+
+
 @Module({
   imports: [
     /**
@@ -67,6 +71,8 @@ import { LiveOpsModule } from './live-ops/live-ops.module';
      SecurityModule,
      AdminModule,
      LiveOpsModule,
+     CaptionsModule,
+     SearchModule,
   ],
   controllers: [AppController],
   providers: [

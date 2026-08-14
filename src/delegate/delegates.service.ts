@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Injectable, NotFoundException, BadRequestException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { AccessTier, Delegate } from "./entities/delegate.entity";
 import { IsNull, Repository, In } from "typeorm";
@@ -178,4 +178,44 @@ export class DelegatesService {
         });
         return d?.tags ?? [];
     }
+
+    listDelegates(q: { search?: string; tier?: AccessTier; track?: string }) {
+    const qb = this.delegateRepository.createQueryBuilder('d');
+    if (q.tier) qb.andWhere('d.accessTier = :tier', { tier: q.tier });
+    if (q.search) {
+        qb.andWhere('(d.name ILIKE :s OR d.email ILIKE :s OR d.organisation ILIKE :s)', {
+            s: `%${q.search}%`,
+        });
+    }
+    if (q.track) qb.andWhere(':track = ANY(d.tracks)', { track: q.track });
+    return qb.orderBy('d.createdAt', 'DESC').take(500).getMany();
+}
+
+listAdmins(): Promise<Delegate[]> {
+    return this.delegateRepository.findBy({ accessTier: AccessTier.ADMIN });
+}
+
+async setAdmin(id: string, grant: boolean, actingUserId: string): Promise<Delegate> {
+    const delegate = await this.delegateRepository.findOneBy({ id });
+    if (!delegate) throw new NotFoundException('Delegate not found');
+
+    if (!grant) {
+        // Guard 1: locking yourself out with one click
+        if (id === actingUserId) {
+            throw new BadRequestException('You cannot revoke your own admin access');
+        }
+        // Guard 2: locking EVERYONE out — unrecoverable without database access
+        const admins = await this.delegateRepository.countBy({ accessTier: AccessTier.ADMIN });
+        if (admins <= 1) {
+            throw new BadRequestException('Cannot revoke the last remaining admin');
+        }
+    }
+
+    delegate.accessTier = grant ? AccessTier.ADMIN : AccessTier.STANDARD;
+    return this.delegateRepository.save(delegate);
+}
+
+
+
+
 }   

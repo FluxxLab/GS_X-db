@@ -88,17 +88,24 @@ export class SessionsService {
     }
 
 
-    async update(id: string, dto: UpdateSessionDto): Promise<Session>{
-
+       async update(id: string, dto: UpdateSessionDto): Promise<Session> {
         const session = await this.findById(id);
-
-        const {speakerIds, startsAt, endsAt, ...data} = dto;
+        const { speakerIds, startsAt, endsAt, ...data } = dto;
         Object.assign(session, data);
 
-        if(startsAt) session.startsAt = new Date(startsAt);
-        if(endsAt) session.endsAt = new Date(endsAt);
+        if (startsAt) session.startsAt = new Date(startsAt);
+        if (endsAt) session.endsAt = new Date(endsAt);
+
+        // was silently discarded: an edit returned 200 and changed nothing
+        if (speakerIds) {
+            session.speakers = speakerIds.length
+                ? await this.speakers.findBy({ id: In(speakerIds) })
+                : [];
+        }
+
         return this.sessions.save(session);
     }
+
 
     async setStatus(id: string, status: SessionStatus): Promise<Session> {
 
@@ -180,6 +187,15 @@ export class SessionsService {
         ]);
         return {live, scheduled, completed};
     }
+
+        listSpeakers(): Promise<Speaker[]> {
+        return this.speakers.find({ order: { name: 'ASC' } });
+    }
+
+    createSpeaker(dto: Partial<Speaker>): Promise<Speaker> {
+        return this.speakers.save(this.speakers.create(dto));
+    }
+
 
 }
 

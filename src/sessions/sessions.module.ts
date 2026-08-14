@@ -5,10 +5,11 @@ import { Session } from './entities/session.entity';
 import { Speaker } from './entities/speaker.entity';
 import { SessionController } from './sessions.controller';
 import { SessionsService } from './sessions.service';
+import { SpeakersController } from './speakers.controller';
 
 @Module({
   imports: [TypeOrmModule.forFeature([Session, Speaker, SessionBookmark])],
-  controllers: [SessionController],
+  controllers: [SessionController, SpeakersController],
   providers: [SessionsService],
   exports: [SessionsService], // search, captions, discussions will need it
 })

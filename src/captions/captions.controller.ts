@@ -1,4 +1,4 @@
-import { Controller, Get, NotFoundException, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { Controller, Get, NotFoundException, Param, ParseUUIDPipe, Post, Res, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -7,6 +7,10 @@ import { AccessTier } from '../delegate/entities/delegate.entity';
 import { SessionStatus } from '../sessions/entities/session.entity';
 import { SessionsService } from '../sessions/sessions.service';
 import { LivekitService } from './livekit.service';
+import {CaptionsService} from './captions.service';
+import { Audit } from 'src/common/decorators/audit.decorator';
+import {EventSeverity} from 'src/security/entities/security-event.entity';
+import type {Response} from 'express';
 
 
 @ApiTags('captions')
@@ -16,6 +20,7 @@ export class CaptionsController {
     constructor(
         private readonly livekit: LivekitService,
         private readonly sessions: SessionsService,
+        private readonly captions: CaptionsService,
     ){}
 
     @Get(':sessionid')
@@ -56,4 +61,39 @@ export class CaptionsController {
         }
        
     }
+
+    @Get(':/sessionId/transcript')
+    @Roles(AccessTier.ADMIN)
+    @ApiOperation({summary: "full caption transcript for a session(admin"})
+    transcript(@Param('sessionId', ParseUUIDPipe) sessionId: string){
+        return this.captions.fullTranscript(sessionId);
+    }
+
+        @Get(':sessionId/transcript/export')
+    @Roles(AccessTier.ADMIN)
+    @Audit({ type: 'transcript_exported', description: 'Session transcript exported', severity: EventSeverity.WARNING })
+    @ApiOperation({ summary: 'Export a session transcript as CSV or TXT (admin, audited)' })
+    async exportTranscript(
+        @Param('sessionId', ParseUUIDPipe) sessionId: string,
+        @Query('format') format: string = 'csv',
+        @Res() res: Response,
+    ) {
+        const segments = await this.captions.fullTranscript(sessionId);
+        if (format === 'txt') {
+            res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+            return res.send(
+                segments
+                    .map((s) => `[${s.createdAt.toISOString()}] ${s.text}`)
+                    .join('\n'),
+            );
+        }
+        const cell = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+        const rows = [
+            'createdAt,room,source,text',
+            ...segments.map((s) => [s.createdAt.toISOString(), s.room, s.source, cell(s.text)].join(',')),
+        ];
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.send(rows.join('\n'));
+    }
+
 }

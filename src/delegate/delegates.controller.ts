@@ -1,4 +1,4 @@
-import {Controller, Post, Get,Res, Put, Delete, Patch, Param, ParseUUIDPipe, Body} from '@nestjs/common';
+import {Controller, Post, Get,Res, Put, Delete, Patch, Param, ParseUUIDPipe, Body, Query} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
 import { DelegatesService } from './delegates.service';
 import { Audit } from '../common/decorators/audit.decorator';
@@ -11,6 +11,7 @@ import type { AuthUser } from 'src/auth/strategies/jwt.stategies';
 import { UpdateMeDto } from './dto/update-me.dto';
 import type {Response} from 'express';
 import { EventSeverity } from '../security/entities/security-event.entity';
+import { ListDelegatesDto } from './dto/list-delegates.dto';
 
 @ApiTags('delegates')
 @ApiBearerAuth()
@@ -19,6 +20,14 @@ export class DelegatesController {
     constructor(
         private readonly service: DelegatesService,
     ){}
+
+@Get()
+@Roles(AccessTier.ADMIN)
+@ApiOperation({ summary: 'Delegate directory with filters' })
+list(@Query() query: ListDelegatesDto) {
+    return this.service.listDelegates(query);
+}
+
 
 @Post('registration-list')
 @Roles(AccessTier.ADMIN)
@@ -78,6 +87,8 @@ me(@CurrentUser() user: AuthUser){
 updateMe(@CurrentUser() user: AuthUser, @Body() dto: UpdateMeDto) {
   return this.service.updateProfile(user.id, dto);
 }
+
+   
 
 
 
