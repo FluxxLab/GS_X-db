@@ -1,11 +1,12 @@
 import {
+  IsBoolean,
   IsEmail,
+  IsNotEmpty,
   IsOptional,
   IsString,
   Length,
   MaxLength,
   MinLength,
-  Equals,
 } from 'class-validator';
 import { Public } from 'src/common/decorators/public.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -33,18 +34,23 @@ export class RegisterDto {
   inviteCode?: string;
 
   @ApiProperty({
-    description: ' 6 digit code from the verification email/sms ',
+    description: '6 digit code from the verification email/sms',
   })
   @IsString()
   @Length(6, 6)
   otp: string;
 
-  @ApiPropertyOptional({ example: ' +2349030000000' })
+  @ApiPropertyOptional({ example: '+2349030000000' })
   @IsString()
   @IsOptional()
   phone?: string;
 
-  @ApiPropertyOptional({ example: '2025-10-15T12:00:00Z' })
-  @Equals(true)
+  @ApiProperty({
+    description:
+      'Consent to registration terms — must be explicitly true (boolean)',
+    example: true,
+  })
+  @IsBoolean()
+  @IsNotEmpty()
   consent: boolean;
 }

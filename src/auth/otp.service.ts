@@ -99,7 +99,7 @@ export class OtpService {
 
     let attempts: number;
     try {
-      attempts = await this.redis.incr(`otp:attemps:${email}`);
+      attempts = await this.redis.incr(`otp:attempts:${email}`);
     } catch (err) {
       this.logger.error(`Redis attempts incr failed for ${email}: ${err}`);
       throw new InternalServerErrorException('OTP service unavailable');

@@ -178,7 +178,12 @@ export class AuthService {
   async registration(dto: RegisterDto, ctx: RequestContext) {
     const email = dto.email.toLowerCase();
 
-    // proof first: which channel actually verified this registrant?
+    if (dto.consent !== true) {
+      throw new BadRequestException(
+        'consent must be explicitly true (boolean) to register',
+      );
+    }
+
     const verifiedVia = await this.otpService.assertValid(email, dto.otp);
 
     if (await this.delegate.findByEmailForAuth(email)) {
