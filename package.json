@@ -7,7 +7,12 @@
   "license": "UNLICENSED",
   "packageManager": "pnpm@10.25.0",
   "pnpm": {
-    "onlyBuiltDependencies": ["bcrypt", "protobufjs", "msgpackr-extract", "@firebase/util"],
+    "onlyBuiltDependencies": [
+      "bcrypt",
+      "protobufjs",
+      "msgpackr-extract",
+      "@firebase/util"
+    ],
     "allowedDeprecatedVersions": {
       "eslint-plugin-react-hooks": "^6.0.0"
     }
@@ -31,6 +36,8 @@
     "migration:revert": "pnpm typeorm migration:revert"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1110.0",
+    "@aws-sdk/s3-request-presigner": "^3.1110.0",
     "@deepgram/sdk": "^5.7.0",
     "@nestjs/bull": "^11.0.5",
     "@nestjs/bullmq": "^11.0.5",
