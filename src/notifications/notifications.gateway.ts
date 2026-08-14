@@ -1,4 +1,8 @@
-import { ConnectedSocket, SubscribeMessage, WebSocketGateway } from '@nestjs/websockets';
+import {
+  ConnectedSocket,
+  SubscribeMessage,
+  WebSocketGateway,
+} from '@nestjs/websockets';
 import type { Socket } from 'socket.io';
 import { Rooms } from '../common/realtime/realtime.service';
 import { DelegatesService } from '../delegate/delegates.service';

@@ -1,8 +1,6 @@
+import { IsString } from 'class-validator';
 
-
-import { IsString } from "class-validator";
-
-export class VerifyPassDto{
-    @IsString()
-    pass: string;
+export class VerifyPassDto {
+  @IsString()
+  pass: string;
 }

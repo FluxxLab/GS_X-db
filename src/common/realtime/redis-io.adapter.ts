@@ -4,21 +4,19 @@ import { createAdapter } from '@socket.io/redis-adapter';
 import Redis from 'ioredis';
 import type { ServerOptions } from 'socket.io';
 
-
 export class RedisIoAdapter extends IoAdapter {
-    private adapterConstructor: ReturnType<typeof createAdapter>;
+  private adapterConstructor: ReturnType<typeof createAdapter>;
 
-    constructor(app: INestApplication, host: string, port: number){
-        super(app);
-        const pubClient = new Redis({host, port});
-        const subClient = pubClient.duplicate();
-        this.adapterConstructor = createAdapter(pubClient, subClient);
-    }
+  constructor(app: INestApplication, host: string, port: number) {
+    super(app);
+    const pubClient = new Redis({ host, port });
+    const subClient = pubClient.duplicate();
+    this.adapterConstructor = createAdapter(pubClient, subClient);
+  }
 
-    createIOServer(port: number, options?: ServerOptions){
-        const server = super.createIOServer(port,options);
-        server.adapter(this.adapterConstructor);
-        return server;
-    }
+  createIOServer(port: number, options?: ServerOptions) {
+    const server = super.createIOServer(port, options);
+    server.adapter(this.adapterConstructor);
+    return server;
+  }
 }
-

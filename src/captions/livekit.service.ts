@@ -10,12 +10,18 @@ export class LivekitService {
 
   /** Delegate: subscribe-only access to a venue room's audio. */
   listenerToken(room: string, delegateId: string): Promise<string> {
-    return this.mint(room, delegateId, { canPublish: false, canSubscribe: true });
+    return this.mint(room, delegateId, {
+      canPublish: false,
+      canSubscribe: true,
+    });
   }
 
   /** Admin capture device: publish-only. */
   publisherToken(room: string, adminId: string): Promise<string> {
-    return this.mint(room, `capture:${adminId}`, { canPublish: true, canSubscribe: false });
+    return this.mint(room, `capture:${adminId}`, {
+      canPublish: true,
+      canSubscribe: false,
+    });
   }
 
   serverUrl(): string {
@@ -33,12 +39,13 @@ export class LivekitService {
       { identity, ttl: '2h' },
     );
     at.addGrant({ room: audioRoom(room), roomJoin: true, ...grants });
-    return at.toJwt(); 
+    return at.toJwt();
   }
 
   private requireConfig(key: string): string {
     const value = this.config.get<string>(key);
-    if (!value) throw new ServiceUnavailableException('Live audio is not configured');
+    if (!value)
+      throw new ServiceUnavailableException('Live audio is not configured');
     return value;
   }
 }

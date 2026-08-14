@@ -1,5 +1,14 @@
 import {
-  Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -13,80 +22,84 @@ import { SessionsService } from './sessions.service';
 import type { AuthUser } from 'src/auth/strategies/jwt.stategies';
 import { Audit } from 'src/common/decorators/audit.decorator';
 
-
-interface Auth {id: string; role: AccessTier}
-
 @Controller('sessions')
 @ApiBearerAuth()
 @ApiTags('sessions')
-export class SessionController{
-    constructor(
-        private readonly service: SessionsService
-    ){}
+export class SessionController {
+  constructor(private readonly service: SessionsService) {}
 
-    @Get()
-    @ApiOperation({
+  @Get()
+  @ApiOperation({})
+  list(@Query() query: QuerySessionsDto) {
+    return this.service.list(query);
+  }
 
-    })
-    list(@Query() query:QuerySessionsDto){
-        return this.service.list(query);
-    }
+  @Get('live')
+  @ApiOperation({})
+  liveNow() {
+    return this.service.findLiveNow();
+  }
 
-    @Get('live')
-    @ApiOperation({})
-    liveNow(){
-        return this.service.findLiveNow();
-    }
+  @Get('saved')
+  @ApiOperation({})
+  saved(@CurrentUser() user: AuthUser) {
+    return this.service.savedSessions(user.id);
+  }
 
-    @Get('saved')
-    @ApiOperation({})
-    saved(@CurrentUser() user: AuthUser){
-        return this.service.savedSessions(user.id);
-    }
+  @Get(':id')
+  @ApiOperation({})
+  findOne(@Param('id', ParseUUIDPipe) id: string) {
+    return this.service.findById(id);
+  }
 
-  
-    @Get(':id')
-    @ApiOperation({})
-    findOne(@Param('id', ParseUUIDPipe) id: string){
-        return this.service.findById(id);
-    }
+  @Post()
+  @ApiOperation({})
+  @Roles(AccessTier.ADMIN)
+  create(@Body() dto: CreateSessionDto) {
+    return this.service.create(dto);
+  }
 
-    @Post()
-    @ApiOperation({})
-    @Roles(AccessTier.ADMIN)
-    create(@Body() dto:CreateSessionDto){
-        return this.service.create(dto);
-    }
+  @Patch(':id')
+  @ApiOperation({})
+  @Roles(AccessTier.ADMIN)
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateSessionDto,
+  ) {
+    return this.service.update(id, dto);
+  }
 
+  @Patch(':id/status')
+  @ApiOperation({})
+  @Roles(AccessTier.ADMIN)
+  @Audit({
+    type: 'session_status_changed',
+    description: 'Session status changed',
+  })
+  setStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateSessionStatusDto,
+  ) {
+    return this.service.setStatus(id, dto.status);
+  }
 
-    @Patch(':id')
-    @ApiOperation({})
-    @Roles(AccessTier.ADMIN)
-    update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateSessionDto){
-        return this.service.update(id, dto);
-    }
+  @Post(':id/bookmark')
+  @HttpCode(204)
+  @ApiOperation({})
+  async bookmark(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    await this.service.bookmark(user.id, id);
+  }
 
-
-    @Patch(':id/status')
-    @ApiOperation({})
-    @Roles(AccessTier.ADMIN)
-    @Audit({type: 'session_status_changed', description: 'Session status changed'})
-    setStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateSessionStatusDto){
-        return this.service.setStatus(id, dto.status);
-    }
-
-    @Post(':id/bookmark')
-    @HttpCode(204)
-    @ApiOperation({})
-    async bookmark(@Param('id', ParseUUIDPipe ) id: string, @CurrentUser() user: AuthUser){
-        await this.service.bookmark(user.id, id);
-    }
-
-    @Delete(':id/bookmark')
-    @HttpCode(204)
-    @ApiOperation({})
-    async unbookmark(@Param('id', ParseUUIDPipe) id:string, @CurrentUser() user: AuthUser){
-        await this.service.unbookmark(user.id, id);
-    }
-
+  @Delete(':id/bookmark')
+  @HttpCode(204)
+  @ApiOperation({})
+  async unbookmark(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    await this.service.unbookmark(user.id, id);
+  }
 }

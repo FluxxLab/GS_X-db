@@ -17,12 +17,12 @@ import { SmtpEmailSender } from './email/smtp-email.sender';
 import { SMS_SENDER } from './sms/sms-sender.interface';
 import { LogSmsSender } from './sms/log-sms.sender';
 import { TermiiSmsSender } from './sms/termii-sms.sender';
-import {NotificationsGateway} from './notifications.gateway';
+import { NotificationsGateway } from './notifications.gateway';
 @Module({
   imports: [
     TypeOrmModule.forFeature([Notification, DeviceToken]),
-    BullModule.registerQueue({ name: 'notifications' }),   
-    DelegateModule,                                        
+    BullModule.registerQueue({ name: 'notifications' }),
+    DelegateModule,
   ],
   controllers: [NotificationsController],
   providers: [
@@ -31,24 +31,29 @@ import {NotificationsGateway} from './notifications.gateway';
     NotificationsGateway,
     {
       provide: PUSH_SENDER,
-      inject: [ConfigService],                            
+      inject: [ConfigService],
       useFactory: (config: ConfigService) =>
-        config.get('FIREBASE_PROJECT_ID') ? new FcmPushSender(config) : new LogPushSender(),
+        config.get('FIREBASE_PROJECT_ID')
+          ? new FcmPushSender(config)
+          : new LogPushSender(),
     },
     {
-  provide: EMAIL_SENDER,
-  inject: [ConfigService],
-  useFactory: (config: ConfigService) =>
-    config.get('SMTP_HOST') ? new SmtpEmailSender(config) : new LogEmailSender(),
-},
-{
-  provide: SMS_SENDER,
-  inject: [ConfigService],
-  useFactory: (config: ConfigService) =>
-    config.get('TERMII_API_KEY') ? new TermiiSmsSender(config) : new LogSmsSender(),
-},
-
+      provide: EMAIL_SENDER,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) =>
+        config.get('SMTP_HOST')
+          ? new SmtpEmailSender(config)
+          : new LogEmailSender(),
+    },
+    {
+      provide: SMS_SENDER,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) =>
+        config.get('TERMII_API_KEY')
+          ? new TermiiSmsSender(config)
+          : new LogSmsSender(),
+    },
   ],
-  exports: [EMAIL_SENDER, SMS_SENDER, NotificationsGateway]
+  exports: [EMAIL_SENDER, SMS_SENDER, NotificationsGateway],
 })
 export class NotificationsModule {}

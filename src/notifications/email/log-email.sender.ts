@@ -1,12 +1,11 @@
-import { Injectable, Logger } from "@nestjs/common";
-import type { EmailSender } from "./email-sender.interface";
+import { Injectable, Logger } from '@nestjs/common';
+import type { EmailSender } from './email-sender.interface';
 
 @Injectable()
 export class LogEmailSender implements EmailSender {
-    private readonly logger = new Logger('LogEmailSender');
+  private readonly logger = new Logger('LogEmailSender');
 
-
-    async send(to: string, subject: string, text: string): Promise<void> {
-        this.logger.log(`[dev] email to ${to}: ${subject} - ${text}`);
-    }
+  async send(to: string, subject: string, text: string): Promise<void> {
+    this.logger.log(`[dev] email to ${to}: ${subject} - ${text}`);
+  }
 }
