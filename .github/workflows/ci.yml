@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: gs26
+          POSTGRES_PASSWORD: ci_password
+          POSTGRES_DB: gs26
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+      - run: corepack enable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - name: Type-check
+        run: npx tsc --noEmit
+      - name: Lint
+        run: pnpm lint
+      - name: Build
+        run: pnpm build
+
+      - name: Boot smoke test
+        env:
+          NODE_ENV: development
+          PORT: 3000
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_USER: gs26
+          DB_PASSWORD: ci_password
+          DB_NAME: gs26
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          JWT_SECRET: ci_only_secret_not_used_anywhere
+          JWT_ACCESS_TTL: 900
+          JWT_REFRESH_TTL: 2592000
+        run: |
+          node dist/main.js & APP_PID=$!
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:3000/docs >/dev/null && OK=1 && break
+            sleep 2
+          done
+          kill $APP_PID
+          test "$OK" = "1" || (echo "App failed to boot" && exit 1)
