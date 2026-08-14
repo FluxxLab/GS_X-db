@@ -17,9 +17,9 @@ import type { SmsSender } from '../notifications/sms/sms-sender.interface';
 
 export type OtpChannel = 'email' | 'sms';
 
-const OTP_TTL_SEC = 600;
-const MAX_ATTEMPTS = 5;
-const MAX_REQUESTS_PER_HOUR = 3;
+const OTP_TTL_SEC = 900;
+const MAX_ATTEMPTS = 10;
+const MAX_REQUESTS_PER_HOUR = 10;
 
 @Injectable()
 export class OtpService {
