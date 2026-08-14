@@ -4,6 +4,8 @@ import {
   HttpStatus,
   Inject,
   Injectable,
+  InternalServerErrorException,
+  Logger,
 } from '@nestjs/common';
 import { randomInt } from 'crypto';
 import Redis from 'ioredis';
@@ -21,6 +23,8 @@ const MAX_REQUESTS_PER_HOUR = 3;
 
 @Injectable()
 export class OtpService {
+  private readonly logger = new Logger(OtpService.name);
+
   constructor(
     @Inject(REDIS)
     private readonly redis: Redis,
@@ -42,10 +46,17 @@ export class OtpService {
       );
     }
 
-    const requests = await this.redis.incr(`otp:rate:${email}`);
-    if (requests === 1) {
-      await this.redis.expire(`otp:rate:${email}`, 3600);
+    let requests: number;
+    try {
+      requests = await this.redis.incr(`otp:rate:${email}`);
+      if (requests === 1) {
+        await this.redis.expire(`otp:rate:${email}`, 3600);
+      }
+    } catch (err) {
+      this.logger.error(`Redis rate limit failed for ${email}: ${err}`);
+      throw new InternalServerErrorException('OTP service unavailable');
     }
+
     if (requests > MAX_REQUESTS_PER_HOUR) {
       throw new HttpException(
         'Too many requests - try again later',
@@ -54,39 +65,66 @@ export class OtpService {
     }
 
     const code = randomInt(100000, 1000000).toString();
-    await this.redis.set(
-      `otp:code:${email}`,
-      JSON.stringify({ code, channel }),
-      'EX',
-      OTP_TTL_SEC,
-    );
-    await this.redis.del(`otp:attempts:${email}`);
+    try {
+      await this.redis.set(
+        `otp:code:${email}`,
+        JSON.stringify({ code, channel }),
+        'EX',
+        OTP_TTL_SEC,
+      );
+      await this.redis.del(`otp:attempts:${email}`);
+    } catch (err) {
+      this.logger.error(`Redis OTP store failed for ${email}: ${err}`);
+      throw new InternalServerErrorException('OTP service unavailable');
+    }
 
     const text = `Your GS-26 registration code is ${code}. it expires in 10 minutes`;
 
-    if (channel === 'sms') {
-      await this.sms.send(phone as string, text);
-    } else {
-      await this.email.send(email, 'Your GS-26 verification code', text);
+    try {
+      if (channel === 'sms') {
+        await this.sms.send(phone as string, text);
+      } else {
+        await this.email.send(email, 'Your GS-26 verification code', text);
+      }
+    } catch (err) {
+      this.logger.error(`OTP ${channel} delivery failed for ${email}: ${err}`);
+      throw new InternalServerErrorException(
+        `Failed to send OTP via ${channel}. Please try again later.`,
+      );
     }
   }
 
-  /**
-   * Returns the cannel that was verified; throws otherwise. consumes
-   */
   async assertValid(rawEmail: string, code: string): Promise<OtpChannel> {
     const email = rawEmail.toLowerCase().trim();
 
-    const attempts = await this.redis.incr(`otp:attemps:${email}`);
+    let attempts: number;
+    try {
+      attempts = await this.redis.incr(`otp:attemps:${email}`);
+    } catch (err) {
+      this.logger.error(`Redis attempts incr failed for ${email}: ${err}`);
+      throw new InternalServerErrorException('OTP service unavailable');
+    }
+
     if (attempts > MAX_ATTEMPTS) {
-      await this.redis.del(`otp:code:${email}`);
+      try {
+        await this.redis.del(`otp:code:${email}`);
+      } catch {
+        // ignore cleanup error
+      }
       throw new HttpException(
         'Too many attempts - try again later',
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
 
-    const stored = await this.redis.get(`otp:code:${email}`);
+    let stored: string | null;
+    try {
+      stored = await this.redis.get(`otp:code:${email}`);
+    } catch (err) {
+      this.logger.error(`Redis OTP lookup failed for ${email}: ${err}`);
+      throw new InternalServerErrorException('OTP service unavailable');
+    }
+
     if (!stored) {
       throw new BadRequestException('Invalid or expired code');
     }
@@ -96,7 +134,11 @@ export class OtpService {
       throw new BadRequestException('invalid or expired code');
     }
 
-    await this.redis.del(`otp:code:${email}`, `otp:attempts:${email}`);
+    try {
+      await this.redis.del(`otp:code:${email}`, `otp:attempts:${email}`);
+    } catch {
+      // ignore cleanup error
+    }
 
     return parsed.channel;
   }

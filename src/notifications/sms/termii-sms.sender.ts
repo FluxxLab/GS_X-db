@@ -9,25 +9,35 @@ export class TermiiSmsSender implements SmsSender {
   constructor(private readonly config: ConfigService) {}
 
   async send(toPhone: string, text: string): Promise<void> {
-    const res = await fetch('https://api.ng.termii.com/api/sms/send', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        api_key: this.config.getOrThrow('TERMII_API_KEY'),
-        to: toPhone,
-        from: this.config.getOrThrow('TERMII_SENDER_ID'),
-        sms: text,
-        type: 'plain',
-        channel: 'generic',
-      }),
-    });
-    if (!res.ok) {
-      this.logger.error(
-        `Termii send failed (${res.status}: ${await res.text()}`,
-      );
-      new Error('SMS delivery failed');
+    try {
+      const res = await fetch('https://api.ng.termii.com/api/sms/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          api_key: this.config.getOrThrow('TERMII_API_KEY'),
+          to: toPhone,
+          from: this.config.getOrThrow('TERMII_SENDER_ID'),
+          sms: text,
+          type: 'plain',
+          channel: 'generic',
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.text();
+        this.logger.error(`Termii send failed (${res.status}): ${body}`);
+        throw new Error(`SMS delivery failed: Termii HTTP ${res.status}`);
+      }
+    } catch (err) {
+      if (
+        err instanceof Error &&
+        err.message.startsWith('SMS delivery failed')
+      ) {
+        throw err;
+      }
+      this.logger.error(`Termii network/unknown error: ${err}`);
+      throw new Error('SMS delivery failed: network error');
     }
   }
 }

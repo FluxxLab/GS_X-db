@@ -1,5 +1,5 @@
 import { BullModule } from '@nestjs/bullmq';
-import { Module } from '@nestjs/common';
+import { Logger, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DelegateModule } from '../delegate/delegate.module';
@@ -18,6 +18,43 @@ import { SMS_SENDER } from './sms/sms-sender.interface';
 import { LogSmsSender } from './sms/log-sms.sender';
 import { TermiiSmsSender } from './sms/termii-sms.sender';
 import { NotificationsGateway } from './notifications.gateway';
+
+const logger = new Logger('NotificationsModule');
+
+function hasAllSmtp(config: ConfigService): boolean {
+  const required = [
+    'SMTP_HOST',
+    'SMTP_PORT',
+    'SMTP_USER',
+    'SMTP_PASSWORD',
+    'SMTP_FROM',
+  ] as const;
+  const missing = required.filter((k) => !config.get(k));
+  if (missing.length > 0) {
+    if (config.get('SMTP_HOST')) {
+      logger.warn(
+        `SMTP_HOST set but missing: ${missing.join(', ')}. Falling back to LogEmailSender.`,
+      );
+    }
+    return false;
+  }
+  return true;
+}
+
+function hasAllTermii(config: ConfigService): boolean {
+  const required = ['TERMII_API_KEY', 'TERMII_SENDER_ID'] as const;
+  const missing = required.filter((k) => !config.get(k));
+  if (missing.length > 0) {
+    if (config.get('TERMII_API_KEY')) {
+      logger.warn(
+        `TERMII_API_KEY set but missing: ${missing.join(', ')}. Falling back to LogSmsSender.`,
+      );
+    }
+    return false;
+  }
+  return true;
+}
+
 @Module({
   imports: [
     TypeOrmModule.forFeature([Notification, DeviceToken]),
@@ -41,17 +78,13 @@ import { NotificationsGateway } from './notifications.gateway';
       provide: EMAIL_SENDER,
       inject: [ConfigService],
       useFactory: (config: ConfigService) =>
-        config.get('SMTP_HOST')
-          ? new SmtpEmailSender(config)
-          : new LogEmailSender(),
+        hasAllSmtp(config) ? new SmtpEmailSender(config) : new LogEmailSender(),
     },
     {
       provide: SMS_SENDER,
       inject: [ConfigService],
       useFactory: (config: ConfigService) =>
-        config.get('TERMII_API_KEY')
-          ? new TermiiSmsSender(config)
-          : new LogSmsSender(),
+        hasAllTermii(config) ? new TermiiSmsSender(config) : new LogSmsSender(),
     },
   ],
   exports: [EMAIL_SENDER, SMS_SENDER, NotificationsGateway],
