@@ -4,9 +4,11 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { VotingService } from './voting.service';
 import { PitchEntry } from './entities/pitch-entry.entity';
 import { PitchVote } from './entities/pitch-vote.entity';
+import { VotingController } from './voting.controller';
 
 @Module({
   imports: [TypeOrmModule.forFeature([PitchEntry, PitchVote])],
+  controllers: [VotingController],
   providers: [VotingGateway, VotingService],
   exports: [VotingService],
 })
