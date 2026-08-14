@@ -12,6 +12,8 @@ import { RegistrationEntry } from './entities/registration-entry.entity';
 import { randomBytes } from 'crypto';
 import { CreateRegistrationEntryDto } from './dto/create-delegate.dto';
 import { UpdateMeDto } from './dto/update-me.dto';
+import { DelegateDirectoryDto } from './dto/delegate-directory.dto';
+import { ListDirectoryDto } from './dto/list-directory.dto';
 
 @Injectable()
 export class DelegatesService {
@@ -225,6 +227,51 @@ export class DelegatesService {
     }
     if (q.track) qb.andWhere(':track = ANY(d.tracks)', { track: q.track });
     return qb.orderBy('d.createdAt', 'DESC').take(500).getMany();
+  }
+
+  static toDirectoryView(this: void, d: Delegate): DelegateDirectoryDto {
+    return {
+      id: d.id,
+      name: d.name,
+      organisation: d.organisation ?? null,
+      country: d.country ?? null,
+      accessTier: d.accessTier,
+      title: d.title ?? null,
+      track: d.track ?? null,
+      tags: d.tags ?? [],
+      tracks: d.tracks ?? [],
+    };
+  }
+
+  async listDelegatesPublic(
+    query: ListDirectoryDto,
+  ): Promise<{ items: DelegateDirectoryDto[]; total: number }> {
+    const limit = query.limit ?? 100;
+    const offset = query.offset ?? 0;
+    const q = query.q?.trim();
+
+    const qb = this.delegateRepository
+      .createQueryBuilder('d')
+      .where('d.flagged = :f', { f: false })
+      .andWhere('d.pendingReview = :pr', { pr: false });
+
+    if (q) {
+      qb.andWhere(
+        '(d.name ILIKE :s OR d.organisation ILIKE :s OR d.country ILIKE :s)',
+        { s: `%${q}%` },
+      );
+    }
+
+    const [rows, total] = await qb
+      .orderBy('d.name', 'ASC')
+      .limit(limit)
+      .offset(offset)
+      .getManyAndCount();
+
+    return {
+      items: rows.map(DelegatesService.toDirectoryView),
+      total,
+    };
   }
 
   listAdmins(): Promise<Delegate[]> {

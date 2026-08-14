@@ -28,6 +28,8 @@ import type { Response } from 'express';
 import { EventSeverity } from '../security/entities/security-event.entity';
 import { ListDelegatesDto } from './dto/list-delegates.dto';
 import { SetAdminDto } from './entities/set-admin.dto';
+import { DelegateDirectoryDto } from './dto/delegate-directory.dto';
+import { ListDirectoryDto } from './dto/list-directory.dto';
 
 @ApiTags('delegates')
 @ApiBearerAuth()
@@ -40,6 +42,22 @@ export class DelegatesController {
   @ApiOperation({ summary: 'Delegate directory with filters' })
   list(@Query() query: ListDelegatesDto) {
     return this.service.listDelegates(query);
+  }
+
+  @Get('directory')
+  @ApiOperation({
+    summary:
+      'Public delegate directory — safe fields only, excludes pending/flagged',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Paginated list of delegates visible to all logged-in users (no PII)',
+    type: DelegateDirectoryDto,
+    isArray: true,
+  })
+  directory(@Query() query: ListDirectoryDto) {
+    return this.service.listDelegatesPublic(query);
   }
 
   @Post('registration-list')
