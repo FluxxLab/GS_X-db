@@ -38,6 +38,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
      */
     if (payload.typ) throw new UnauthorizedException(); // access tokens have no typ; refresh & pass do
 
-    return { id: payload.sub, accessTier: payload.role };
+    return {
+      id: payload.sub,
+      role: payload.role,
+      accessTier: payload.role,
+      jti: payload.jti,
+      exp: payload.exp,
+    };
   }
 }
