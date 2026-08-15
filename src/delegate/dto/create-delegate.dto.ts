@@ -1,4 +1,4 @@
-import { ApiPropertyOptional, ApiProperty } from '@nestjs/swagger';
+import { ApiPropertyOptional, ApiProperty, PartialType } from '@nestjs/swagger';
 import {
   IsEmail,
   IsIn,
@@ -43,3 +43,5 @@ export class CreateRegistrationEntryDto {
   @IsIn(GRANTABLE_TIERS)
   assignedTier: AccessTier;
 }
+
+export class UpdateRegistrationEntryDto extends PartialType(CreateRegistrationEntryDto) {}

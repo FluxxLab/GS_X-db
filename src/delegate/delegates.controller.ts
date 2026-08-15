@@ -2,6 +2,7 @@ import {
   Controller,
   Post,
   Get,
+  Delete,
   Res,
   Patch,
   Param,
@@ -21,7 +22,7 @@ import { Audit } from '../common/decorators/audit.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { AccessTier } from './entities/delegate.entity';
-import { CreateRegistrationEntryDto } from './dto/create-delegate.dto';
+import { CreateRegistrationEntryDto, UpdateRegistrationEntryDto } from './dto/create-delegate.dto';
 import { SetTierDto } from './dto/set-tier.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthUser } from '../auth/strategies/jwt.stategies';
@@ -88,6 +89,34 @@ export class DelegatesController {
   })
   listEntries() {
     return this.service.listRegistrationEntries();
+  }
+
+  @Patch('registration-list/:id')
+  @Roles(AccessTier.ADMIN)
+  @ApiOperation({ summary: 'Update a registration list entry' })
+  @ApiResponse({ status: 200, description: 'Entry updated successfully' })
+  @Audit({
+    type: 'registration_entry_updated',
+    description: 'Registration list entry updated',
+  })
+  updateEntry(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() dto: UpdateRegistrationEntryDto,
+  ) {
+    return this.service.updateRegistrationEntry(id, dto);
+  }
+
+  @Delete('registration-list/:id')
+  @Roles(AccessTier.ADMIN)
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Delete a registration list entry' })
+  @ApiResponse({ status: 204, description: 'Entry deleted successfully' })
+  @Audit({
+    type: 'registration_entry_deleted',
+    description: 'Registration list entry deleted',
+  })
+  deleteEntry(@Param('id', new ParseUUIDPipe()) id: string) {
+    return this.service.deleteRegistrationEntry(id);
   }
 
   @Patch(':id/tier')
