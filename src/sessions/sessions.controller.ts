@@ -9,6 +9,7 @@ import {
   Patch,
   Post,
   Query,
+  ParseArrayPipe,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -61,6 +62,16 @@ export class SessionController {
   @Roles(AccessTier.ADMIN)
   create(@Body() dto: CreateSessionDto) {
     return this.service.create(dto);
+  }
+
+  @Post('bulk')
+  @ApiOperation({ summary: 'Bulk create sessions' })
+  @Roles(AccessTier.ADMIN)
+  createBulk(
+    @Body(new ParseArrayPipe({ items: CreateSessionDto }))
+    dtos: CreateSessionDto[],
+  ) {
+    return this.service.createBulk(dtos);
   }
 
   @Patch(':id')

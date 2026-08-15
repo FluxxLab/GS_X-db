@@ -86,6 +86,10 @@ export class SessionsService {
     return this.sessions.save(session);
   }
 
+  async createBulk(dtos: CreateSessionDto[]): Promise<Session[]> {
+    return Promise.all(dtos.map((dto) => this.create(dto)));
+  }
+
   async update(id: string, dto: UpdateSessionDto): Promise<Session> {
     const session = await this.findById(id);
     const { speakerIds, startsAt, endsAt, ...data } = dto;
