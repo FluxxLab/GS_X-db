@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Roles } from '../common/decorators/roles.decorator';
 import { AccessTier } from '../delegate/entities/delegate.entity';
@@ -26,19 +26,19 @@ export class LiveOpsController {
   @Roles(AccessTier.ADMIN)
   @Audit({
     type: 'cut-to-break',
-    description: 'Cut all streams to break - broadcast: flags',
+    description: 'Cut stream to break - broadcast: flags',
   })
-  @ApiOperation({ summary: 'Cut all streams to break - broadcast: flags' })
+  @ApiOperation({ summary: 'Cut stream to break - broadcast: flags' })
   cutToBreak(@Body() dto: SetCutToBreakDto) {
-    return this.service.setCutToBreak(dto.active);
+    return this.service.setCutToBreak(dto.sessionId, dto.active);
   }
 
   @Get('flags')
   @ApiOperation({
-    summary: 'Current broadcast flag - delegate apps this on launch',
+    summary: 'Current broadcast flag for a specific session',
   })
-  flags() {
-    return this.service.getflags();
+  flags(@Query('sessionId') sessionId: string) {
+    return this.service.getflags(sessionId);
   }
 
   @Post('set-overlays')
@@ -46,6 +46,6 @@ export class LiveOpsController {
   @Audit({ type: 'overlays_changed', description: 'Stream overlays changed' })
   @ApiOperation({ summary: 'Toggle captions / sign-language overlays' })
   overlays(@Body() dto: setOverlaysDto) {
-    return this.service.setOverlays(dto);
+    return this.service.setOverlays(dto.sessionId, dto);
   }
 }

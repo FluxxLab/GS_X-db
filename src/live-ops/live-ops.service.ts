@@ -4,11 +4,11 @@ import { RealtimeService, Rooms } from '../common/realtime/realtime.service';
 import { REDIS } from '../common/redis/redis.module';
 import { SessionsService } from '../sessions/sessions.service';
 
-const FLAG_KEYS = {
-  cutToBreak: 'liveops:cutToBreak',
-  captionsOverlay: 'liveops:captionsOverlay',
-  signLanguageOverlay: 'liveops:signLanguageOverlay',
-} as const;
+const FLAG_KEYS = (sessionId: string) => ({
+  cutToBreak: `liveops:cutToBreak:${sessionId}`,
+  captionsOverlay: `liveops:captionsOverlay:${sessionId}`,
+  signLanguageOverlay: `liveops:signLanguageOverlay:${sessionId}`,
+});
 
 export interface BroadcastFlags {
   cutToBreak: boolean;
@@ -35,40 +35,42 @@ export class LiveOpsService {
         viewers: await this.realtime.roomSize(Rooms.session(s.id)),
         captionListeners: await this.realtime.roomSize(Rooms.caption(s.id)),
         capturing: (await this.redis.exists(`capture:room:${s.room}`)) === 1,
+        flags: await this.getflags(s.id),
       })),
     );
-    return { sessions, flags: await this.getflags() };
+    return { sessions };
   }
 
-  async setCutToBreak(active: boolean): Promise<BroadcastFlags> {
-    await this.redis.set(FLAG_KEYS.cutToBreak, active ? '1' : '0');
-    return this.broadcastFlags();
+  async setCutToBreak(sessionId: string, active: boolean): Promise<BroadcastFlags> {
+    await this.redis.set(FLAG_KEYS(sessionId).cutToBreak, active ? '1' : '0');
+    return this.broadcastFlags(sessionId);
   }
 
-  async setOverlays(input: {
-    captions?: boolean;
-    signLanguage?: boolean;
-  }): Promise<BroadcastFlags> {
+  async setOverlays(
+    sessionId: string,
+    input: { captions?: boolean; signLanguage?: boolean },
+  ): Promise<BroadcastFlags> {
     if (input.captions !== undefined) {
       await this.redis.set(
-        FLAG_KEYS.captionsOverlay,
+        FLAG_KEYS(sessionId).captionsOverlay,
         input.captions ? '1' : '0',
       );
     }
     if (input.signLanguage !== undefined) {
       await this.redis.set(
-        FLAG_KEYS.signLanguageOverlay,
+        FLAG_KEYS(sessionId).signLanguageOverlay,
         input.signLanguage ? '1' : '0',
       );
     }
-    return this.broadcastFlags();
+    return this.broadcastFlags(sessionId);
   }
 
-  async getflags(): Promise<BroadcastFlags> {
+  async getflags(sessionId: string): Promise<BroadcastFlags> {
+    const keys = FLAG_KEYS(sessionId);
     const [cut, cap, sign] = await this.redis.mget(
-      FLAG_KEYS.cutToBreak,
-      FLAG_KEYS.captionsOverlay,
-      FLAG_KEYS.signLanguageOverlay,
+      keys.cutToBreak,
+      keys.captionsOverlay,
+      keys.signLanguageOverlay,
     );
     return {
       cutToBreak: cut === '1',
@@ -77,9 +79,9 @@ export class LiveOpsService {
     };
   }
 
-  private async broadcastFlags(): Promise<BroadcastFlags> {
-    const flags = await this.getflags();
-    this.realtime.emitGlobal('broadcast:flags', flags);
+  private async broadcastFlags(sessionId: string): Promise<BroadcastFlags> {
+    const flags = await this.getflags(sessionId);
+    this.realtime.emitRoom(Rooms.session(sessionId), 'broadcast:flags', flags);
     return flags;
   }
 }

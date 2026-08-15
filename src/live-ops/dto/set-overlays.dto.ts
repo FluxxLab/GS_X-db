@@ -1,5 +1,5 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsOptional } from 'class-validator';
+import { ApiPropertyOptional, ApiProperty } from '@nestjs/swagger';
+import { IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class setOverlaysDto {
   @ApiPropertyOptional()
@@ -11,4 +11,9 @@ export class setOverlaysDto {
   @IsOptional()
   @IsBoolean()
   signLanguage?: boolean;
+
+  @ApiProperty({ description: 'ID of the session' })
+  @IsString()
+  @IsNotEmpty()
+  sessionId: string;
 }
