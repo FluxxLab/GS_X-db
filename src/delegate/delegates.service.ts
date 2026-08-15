@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { AccessTier, Delegate } from './entities/delegate.entity';
@@ -14,14 +15,25 @@ import { CreateRegistrationEntryDto } from './dto/create-delegate.dto';
 import { UpdateMeDto } from './dto/update-me.dto';
 import { DelegateDirectoryDto } from './dto/delegate-directory.dto';
 import { ListDirectoryDto } from './dto/list-directory.dto';
+import { DelegateConnection } from './entities/delegate-connection.entity';
+import { DirectMessage } from './entities/direct-message.entity';
+import { SendDirectMessageDto } from './dto/send-direct-message.dto';
+import { RealtimeService, Rooms } from '../common/realtime/realtime.service';
 
 @Injectable()
 export class DelegatesService {
+  private readonly logger = new Logger(DelegatesService.name);
+
   constructor(
     @InjectRepository(Delegate)
     private readonly delegateRepository: Repository<Delegate>,
     @InjectRepository(RegistrationEntry)
     private readonly registrationRepository: Repository<RegistrationEntry>,
+    @InjectRepository(DelegateConnection)
+    private readonly connections: Repository<DelegateConnection>,
+    @InjectRepository(DirectMessage)
+    private readonly messages: Repository<DirectMessage>,
+    private readonly realtime: RealtimeService,
   ) {}
 
   findByEmailForAuth(email: string): Promise<Delegate | null> {
@@ -304,5 +316,188 @@ export class DelegatesService {
 
     delegate.accessTier = grant ? AccessTier.ADMIN : AccessTier.STANDARD;
     return this.delegateRepository.save(delegate);
+  }
+
+  static pairKey(a: string, b: string): string {
+    return [a, b].sort().join(':');
+  }
+
+  async addConnection(
+    fromId: string,
+    toId: string,
+  ): Promise<DelegateConnection> {
+    if (fromId === toId) {
+      throw new BadRequestException('You cannot connect to yourself');
+    }
+    const target = await this.findById(toId);
+    if (!target) {
+      throw new NotFoundException('Target delegate not found');
+    }
+    if (target.flagged || target.pendingReview) {
+      throw new BadRequestException(
+        'Cannot connect: delegate is pending review or flagged',
+      );
+    }
+
+    const pairKey = DelegatesService.pairKey(fromId, toId);
+    const [aId, bId] = pairKey.split(':');
+    const existing = await this.connections.findOneBy({
+      fromDelegateId: aId,
+      toDelegateId: bId,
+    });
+
+    if (existing) {
+      existing.mutual = true;
+      await this.connections.save(existing);
+      this.realtime.emitToRoom(Rooms.network(toId), 'network:updated', {
+        type: 'mutual',
+        connectionId: existing.id,
+      });
+      return existing;
+    }
+
+    const conn = await this.connections.save(
+      this.connections.create({
+        fromDelegateId: fromId,
+        toDelegateId: toId,
+        mutual: false,
+      }),
+    );
+    this.realtime.emitToRoom(Rooms.network(toId), 'network:updated', {
+      type: 'new-follower',
+      connectionId: conn.id,
+      fromDelegateId: fromId,
+    });
+    return conn;
+  }
+
+  async listConnections(
+    delegateId: string,
+  ): Promise<Array<{ delegate: DelegateDirectoryDto; mutual: boolean }>> {
+    const conns = await this.connections
+      .createQueryBuilder('c')
+      .where('c.fromDelegateId = :id OR c.toDelegateId = :id', {
+        id: delegateId,
+      })
+      .getMany();
+
+    const otherIds: string[] = [];
+    for (const c of conns) {
+      otherIds.push(
+        c.fromDelegateId === delegateId ? c.toDelegateId : c.fromDelegateId,
+      );
+    }
+    const uniqueIds = Array.from(new Set(otherIds));
+    if (uniqueIds.length === 0) return [];
+    const others = await this.namesByIds(uniqueIds);
+
+    return conns
+      .map((c) => {
+        const otherId =
+          c.fromDelegateId === delegateId ? c.toDelegateId : c.fromDelegateId;
+        const other = others.get(otherId);
+        if (!other) return null;
+        return {
+          delegate: {
+            id: otherId,
+            name: other.name,
+            organisation: other.organisation,
+            country: null,
+            accessTier: AccessTier.STANDARD,
+            title: null,
+            track: null,
+            tags: [],
+            tracks: [],
+          },
+          mutual: c.mutual,
+        };
+      })
+      .filter(Boolean) as Array<{
+      delegate: DelegateDirectoryDto;
+      mutual: boolean;
+    }>;
+  }
+
+  async countConnections(delegateId: string): Promise<number> {
+    const rows = await this.connections
+      .createQueryBuilder('c')
+      .where('c.fromDelegateId = :id OR c.toDelegateId = :id', {
+        id: delegateId,
+      })
+      .getCount();
+    return rows;
+  }
+
+  async sendDirectMessage(
+    senderId: string,
+    recipientId: string,
+    dto: SendDirectMessageDto,
+  ): Promise<DirectMessage> {
+    if (senderId === recipientId) {
+      throw new BadRequestException('You cannot DM yourself');
+    }
+    const recipient = await this.findById(recipientId);
+    if (!recipient) {
+      throw new NotFoundException('Recipient delegate not found');
+    }
+    const body = dto.body.trim();
+    if (!body) {
+      throw new BadRequestException('Message body cannot be empty');
+    }
+
+    const msg = await this.messages.save(
+      this.messages.create({
+        pairKey: DelegatesService.pairKey(senderId, recipientId),
+        senderId,
+        recipientId,
+        body,
+        readAt: null,
+      }),
+    );
+
+    this.realtime.emitToRoom(
+      Rooms.dm(DelegatesService.pairKey(senderId, recipientId)),
+      'dm:new',
+      {
+        id: msg.id,
+        senderId,
+        recipientId,
+        body,
+        createdAt: msg.createdAt,
+      },
+    );
+
+    this.logger.log(
+      `DM sent ${senderId.slice(0, 8)}… → ${recipientId.slice(0, 8)}… (len=${body.length})`,
+    );
+    return msg;
+  }
+
+  async listThread(
+    callerId: string,
+    otherId: string,
+    limit = 100,
+  ): Promise<DirectMessage[]> {
+    const pairKey = DelegatesService.pairKey(callerId, otherId);
+    const rows = await this.messages
+      .createQueryBuilder('m')
+      .where('m.pairKey = :p', { p: pairKey })
+      .orderBy('m.createdAt', 'ASC')
+      .limit(limit)
+      .getMany();
+
+    const unreadIds = rows
+      .filter((m) => m.recipientId === callerId && !m.readAt)
+      .map((m) => m.id);
+
+    if (unreadIds.length > 0) {
+      await this.messages
+        .createQueryBuilder()
+        .update(DirectMessage)
+        .set({ readAt: new Date() })
+        .whereInIds(unreadIds)
+        .execute();
+    }
+    return rows;
   }
 }

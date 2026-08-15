@@ -27,6 +27,7 @@ export interface DelegateQuestion {
   optionB: string;
   optionC: string;
   optionD: string;
+  playersCount: number;
 }
 
 @Injectable()
@@ -48,7 +49,13 @@ export class TriviaService {
     const q = await this.questions.findOneBy({
       status: TriviaStatus.LIVE,
     });
-    return q ? this.toDelegateShape(q) : null;
+    if (!q) return null;
+    const shape = this.toDelegateShape(q);
+    const distribution = await this.distribution(q.id);
+    return {
+      ...shape,
+      playersCount: Object.values(distribution).reduce((a, b) => a + b, 0),
+    };
   }
 
   async answer(delegateId: string, questionId: string, dto: AnswerTriviaDto) {
@@ -114,10 +121,14 @@ export class TriviaService {
 
     question.status = TriviaStatus.LIVE;
     const saved = await this.questions.save(question);
+    const distribution = await this.distribution(saved.id);
     this.realtime.emitToRoom(
       Rooms.trivia,
       'trivia:question',
-      this.toDelegateShape(saved),
+      {
+        ...this.toDelegateShape(saved),
+        playersCount: Object.values(distribution).reduce((a, b) => a + b, 0),
+      },
     );
     return saved;
   }
@@ -160,6 +171,6 @@ export class TriviaService {
 
   private toDelegateShape(q: TriviaQuestion): DelegateQuestion {
     const { id, text, optionA, optionB, optionC, optionD } = q;
-    return { id, text, optionA, optionB, optionC, optionD };
+    return { id, text, optionA, optionB, optionC, optionD, playersCount: 0 };
   }
 }

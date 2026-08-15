@@ -8,6 +8,7 @@ import {
   ParseUUIDPipe,
   Body,
   Query,
+  HttpCode,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -30,6 +31,7 @@ import { ListDelegatesDto } from './dto/list-delegates.dto';
 import { SetAdminDto } from './entities/set-admin.dto';
 import { DelegateDirectoryDto } from './dto/delegate-directory.dto';
 import { ListDirectoryDto } from './dto/list-directory.dto';
+import { SendDirectMessageDto } from './dto/send-direct-message.dto';
 
 @ApiTags('delegates')
 @ApiBearerAuth()
@@ -165,5 +167,57 @@ export class DelegatesController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.service.setAdmin(id, dto.admin, user.id);
+  }
+
+  @Post(':id/connect')
+  @ApiOperation({
+    summary:
+      'Add delegate to your network (pink ➕ person button). If mutual, marks connection as mutual.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Connection created or promoted to mutual',
+  })
+  connect(
+    @Param('id', new ParseUUIDPipe()) toDelegateId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.service.addConnection(user.id, toDelegateId);
+  }
+
+  @Get('me/connections')
+  @ApiOperation({
+    summary: 'List delegates in your network (the "N in your network" counter)',
+  })
+  async myConnections(@CurrentUser() user: AuthUser) {
+    const [connections, count] = await Promise.all([
+      this.service.listConnections(user.id),
+      this.service.countConnections(user.id),
+    ]);
+    return { count, connections };
+  }
+
+  @Post(':id/messages')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Send a direct message (chat bubble 💬 button)' })
+  @ApiResponse({ status: 200, description: 'Message delivered and persisted' })
+  sendDm(
+    @Param('id', new ParseUUIDPipe()) recipientId: string,
+    @Body() dto: SendDirectMessageDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.service.sendDirectMessage(user.id, recipientId, dto);
+  }
+
+  @Get(':id/messages')
+  @ApiOperation({
+    summary:
+      'Get message thread with this delegate (opens the chat bubble conversation, marks messages as read)',
+  })
+  threadWith(
+    @Param('id', new ParseUUIDPipe()) otherDelegateId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.service.listThread(user.id, otherDelegateId);
   }
 }

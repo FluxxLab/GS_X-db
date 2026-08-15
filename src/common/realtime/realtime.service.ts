@@ -8,6 +8,8 @@ export const Rooms = {
   voting: 'voting',
   trivia: 'trivia',
   notifications: (segment: string) => `notifications:${segment}`,
+  dm: (pairKey: string) => `dm:${pairKey}`,
+  network: (delegateId: string) => `network:${delegateId}`,
 } as const;
 
 @Injectable()
