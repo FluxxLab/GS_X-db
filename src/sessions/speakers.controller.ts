@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { AccessTier } from '../delegate/entities/delegate.entity';
 import { CreateSpeakerDto } from './dto/create-speaker.dto';
@@ -11,6 +12,7 @@ import { SessionsService } from './sessions.service';
 export class SpeakersController {
   constructor(private readonly service: SessionsService) {}
 
+  @Public()
   @Get()
   @ApiOperation({ summary: 'List all speakers' })
   list() {

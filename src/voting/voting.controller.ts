@@ -10,6 +10,7 @@ import {
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { VotingService } from './voting.service';
 import { CreatePitchEntryDto } from './dto/create-pitch-entry.dto';
+import { Public } from 'src/common/decorators/public.decorator';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { AccessTier } from 'src/delegate/entities/delegate.entity';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
@@ -21,12 +22,14 @@ import type { AuthUser } from 'src/auth/strategies/jwt.stategies';
 export class VotingController {
   constructor(private readonly votingService: VotingService) {}
 
+  @Public()
   @Get('entries')
   @ApiOperation({ summary: 'List all pitch entries' })
   listEntries() {
     return this.votingService.listEntries();
   }
 
+  @Public()
   @Get('leaderboard')
   @ApiOperation({ summary: 'Get leaderboard' })
   leaderboard() {

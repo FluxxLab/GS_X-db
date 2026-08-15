@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import type { AuthUser } from '../auth/strategies/jwt.stategies';
 import { AccessTier } from '../delegate/entities/delegate.entity';
@@ -24,6 +25,7 @@ import { Audit } from 'src/common/decorators/audit.decorator';
 export class TriviaController {
   constructor(private readonly service: TriviaService) {}
 
+  @Public()
   @Get('current')
   @ApiOperation({
     summary: '',

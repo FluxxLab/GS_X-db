@@ -18,6 +18,7 @@ import {
 } from '@nestjs/swagger';
 import { DelegatesService } from './delegates.service';
 import { Audit } from '../common/decorators/audit.decorator';
+import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { AccessTier } from './entities/delegate.entity';
 import { CreateRegistrationEntryDto } from './dto/create-delegate.dto';
@@ -46,6 +47,7 @@ export class DelegatesController {
     return this.service.listDelegates(query);
   }
 
+  @Public()
   @Get('directory')
   @ApiOperation({
     summary:

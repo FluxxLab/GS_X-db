@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { AccessTier } from '../delegate/entities/delegate.entity';
 import { CreateSessionDto } from './dto/create-session.dto';
@@ -28,12 +29,14 @@ import { Audit } from 'src/common/decorators/audit.decorator';
 export class SessionController {
   constructor(private readonly service: SessionsService) {}
 
+  @Public()
   @Get()
   @ApiOperation({})
   list(@Query() query: QuerySessionsDto) {
     return this.service.list(query);
   }
 
+  @Public()
   @Get('live')
   @ApiOperation({})
   liveNow() {
@@ -46,6 +49,7 @@ export class SessionController {
     return this.service.savedSessions(user.id);
   }
 
+  @Public()
   @Get(':id')
   @ApiOperation({})
   findOne(@Param('id', ParseUUIDPipe) id: string) {
