@@ -251,4 +251,17 @@ export class DelegatesController {
   ) {
     return this.service.listThread(user.id, otherDelegateId);
   }
+
+  // Declared last so every static path above ('directory', 'me', 'export',
+  // 'admins', 'registration-list') is matched before this catch-all segment.
+  @Get(':id')
+  @ApiOperation({
+    summary:
+      'Single delegate — safe fields only. Includes delegates pending review (scanned QR passes resolve here); excludes flagged.',
+  })
+  @ApiResponse({ status: 200, type: DelegateDirectoryDto })
+  @ApiResponse({ status: 404, description: 'Delegate not found or flagged' })
+  findOne(@Param('id', new ParseUUIDPipe()) id: string) {
+    return this.service.findDirectoryEntry(id);
+  }
 }

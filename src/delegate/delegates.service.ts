@@ -305,6 +305,21 @@ export class DelegatesService {
     };
   }
 
+  // Resolve one delegate for a scanned QR pass or a direct link. Unlike the
+  // browsable directory this includes delegates awaiting review: they can already
+  // send and receive DMs, so their identity has to render. Flagged delegates stay
+  // hidden, and /connect still refuses both cases.
+  async findDirectoryEntry(id: string): Promise<DelegateDirectoryDto> {
+    const delegate = await this.findById(id);
+    if (!delegate || delegate.flagged) {
+      throw new NotFoundException('Delegate not found');
+    }
+    return {
+      ...DelegatesService.toDirectoryView(delegate),
+      pendingReview: delegate.pendingReview,
+    };
+  }
+
   listAdmins(): Promise<Delegate[]> {
     return this.delegateRepository.findBy({ accessTier: AccessTier.ADMIN });
   }
