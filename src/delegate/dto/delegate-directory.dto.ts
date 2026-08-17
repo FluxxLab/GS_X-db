@@ -28,4 +28,11 @@ export class DelegateDirectoryDto {
 
   @ApiProperty({ type: [String], example: ['energy', 'food-systems'] })
   tracks: string[];
+
+  @ApiProperty({
+    required: false,
+    description:
+      'Only set on the single-delegate lookup: true when the delegate is still awaiting admin review, so clients can label the profile and expect /connect to be refused.',
+  })
+  pendingReview?: boolean;
 }
