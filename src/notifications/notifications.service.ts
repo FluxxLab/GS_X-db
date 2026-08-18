@@ -50,6 +50,13 @@ export class NotificationsService {
       .execute();
   }
 
+  // Drop a device so it stops receiving push. Scoped to the caller: a token can
+  // only be removed by the delegate it is currently registered to, so knowing
+  // someone else's token is not enough to silence their phone.
+  async unregisterDevice(delegateId: string, token: string): Promise<void> {
+    await this.deviceTokens.delete({ delegateId, token });
+  }
+
   inboxFor(user: { id: string; role: AccessTier }): Promise<Notification[]> {
     const segments = [AudienceSegment.ALL];
 
