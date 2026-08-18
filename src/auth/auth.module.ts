@@ -10,11 +10,15 @@ import { JwtStrategy } from './strategies/jwt.stategies';
 import { SessionsGateway } from 'src/sessions/sessions.gateway';
 import { OtpService } from './otp.service';
 import { NotificationsModule } from 'src/notifications/notifications.module';
+import { SessionsModule } from 'src/sessions/sessions.module';
 @Module({
   imports: [
     TypeOrmModule.forFeature([RefreshToken]),
     DelegateModule,
     NotificationsModule,
+    // SessionsGateway is provided here (it needs JwtModule for the handshake),
+    // so its SessionsService dependency has to resolve in this module too.
+    SessionsModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
