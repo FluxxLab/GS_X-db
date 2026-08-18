@@ -489,8 +489,13 @@ export class DelegatesService {
       }),
     );
 
+    // Deliver to the open thread and to the recipient's personal room, so a
+    // delegate who is elsewhere in the app still receives the message.
     this.realtime.emitToRoom(
-      Rooms.dm(DelegatesService.pairKey(senderId, recipientId)),
+      [
+        Rooms.dm(DelegatesService.pairKey(senderId, recipientId)),
+        Rooms.network(recipientId),
+      ],
       'dm:new',
       {
         id: msg.id,
