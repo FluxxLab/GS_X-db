@@ -5,6 +5,7 @@ import { CreateSessionDto } from './dto/create-session.dto';
 import { QuerySessionsDto } from './dto/query-sessions.dto';
 import { UpdateSessionDto } from './dto/update-session.dto';
 import { SessionBookmark } from './entities/bookmark.entity';
+import { SessionAttendance } from './entities/attendance.entity';
 import { Session, SessionStatus } from './entities/session.entity';
 import { Speaker } from './entities/speaker.entity';
 import { RealtimeService, Rooms } from 'src/common/realtime/realtime.service';
@@ -19,6 +20,9 @@ export class SessionsService {
 
     @InjectRepository(SessionBookmark)
     private readonly bookmarks: Repository<SessionBookmark>,
+
+    @InjectRepository(SessionAttendance)
+    private readonly attendance: Repository<SessionAttendance>,
 
     private readonly realtime: RealtimeService,
   ) {}
@@ -190,5 +194,25 @@ export class SessionsService {
 
   createSpeaker(dto: Partial<Speaker>): Promise<Speaker> {
     return this.speakers.save(this.speakers.create(dto));
+  }
+
+  // Attendance is only recorded while a session is LIVE: opening the page for a
+  // scheduled or finished session is browsing, not participation. Idempotent -
+  // the unique (delegateId, sessionId) index makes a repeat join a no-op.
+  async recordAttendance(delegateId: string, sessionId: string): Promise<void> {
+    const session = await this.sessions.findOneBy({ id: sessionId });
+    if (!session || session.status !== SessionStatus.LIVE) return;
+
+    await this.attendance
+      .createQueryBuilder()
+      .insert()
+      .into(SessionAttendance)
+      .values({ delegateId, sessionId })
+      .orIgnore()
+      .execute();
+  }
+
+  hasAttended(delegateId: string): Promise<boolean> {
+    return this.attendance.existsBy({ delegateId });
   }
 }
