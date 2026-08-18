@@ -22,6 +22,7 @@ import { DelegateConnection } from './entities/delegate-connection.entity';
 import { DirectMessage } from './entities/direct-message.entity';
 import { SendDirectMessageDto } from './dto/send-direct-message.dto';
 import { RealtimeService, Rooms } from '../common/realtime/realtime.service';
+import { StorageService } from '../common/storage/storage.service';
 
 @Injectable()
 export class DelegatesService {
@@ -37,6 +38,7 @@ export class DelegatesService {
     @InjectRepository(DirectMessage)
     private readonly messages: Repository<DirectMessage>,
     private readonly realtime: RealtimeService,
+    private readonly storage: StorageService,
   ) {}
 
   findByEmailForAuth(email: string): Promise<Delegate | null> {
@@ -199,6 +201,9 @@ export class DelegatesService {
     if (dto.interests) {
       d.interests = dto.interests;
     }
+    if (dto.avatarUrl !== undefined) {
+      d.avatarUrl = dto.avatarUrl;
+    }
     return this.delegateRepository.save(d);
   }
 
@@ -229,17 +234,25 @@ export class DelegatesService {
 
   async namesByIds(
     ids: string[],
-  ): Promise<Map<string, { name: string; organisation: string | null }>> {
+  ): Promise<
+    Map<
+      string,
+      { name: string; organisation: string | null; avatarUrl: string | null }
+    >
+  > {
     if (ids.length === 0) {
       return new Map();
     }
 
     const rows = await this.delegateRepository.find({
       where: { id: In(ids) },
-      select: { id: true, name: true, organisation: true },
+      select: { id: true, name: true, organisation: true, avatarUrl: true },
     });
     return new Map(
-      rows.map((r) => [r.id, { name: r.name, organisation: r.organisation }]),
+      rows.map((r) => [
+        r.id,
+        { name: r.name, organisation: r.organisation, avatarUrl: r.avatarUrl },
+      ]),
     );
   }
 
@@ -277,6 +290,7 @@ export class DelegatesService {
       track: d.track ?? null,
       tags: d.tags ?? [],
       tracks: d.tracks ?? [],
+      avatarUrl: d.avatarUrl ?? null,
     };
   }
 
@@ -452,6 +466,7 @@ export class DelegatesService {
             track: null,
             tags: [],
             tracks: [],
+            avatarUrl: other.avatarUrl,
           },
           mutual: c.mutual,
         };
@@ -607,5 +622,15 @@ export class DelegatesService {
       });
     }
     return out;
+  }
+
+  // A delegate uploads their photo straight to S3 with a one-time signed URL,
+  // then saves the returned public URL through PATCH /delegates/me. Keeping the
+  // bytes off the API means no multipart handling and no request size limit.
+  presignAvatar(contentType: string) {
+    return this.storage.presignUpload({
+      folder: 'delegate-avatars',
+      contentType,
+    });
   }
 }

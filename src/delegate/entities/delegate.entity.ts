@@ -54,6 +54,9 @@ export class Delegate {
   @Column({ type: 'boolean', default: false })
   pendingReview: boolean;
 
+  @Column({ type: 'varchar', length: 512, nullable: true })
+  avatarUrl: string | null;
+
   @Column({ type: 'varchar', length: 20, nullable: true })
   phone: string | null;
 

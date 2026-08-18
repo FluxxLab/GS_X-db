@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Post } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -67,5 +67,21 @@ export class NotificationsController {
     @CurrentUser() user: AuthUser,
   ) {
     await this.service.registerDevice(user.id, dto.token, dto.platform);
+  }
+
+  @Delete('register')
+  @HttpCode(204)
+  @ApiOperation({
+    summary: 'Stop push to this device (Settings > Push notifications off)',
+  })
+  @ApiResponse({
+    status: 204,
+    description: 'Device removed if it was registered',
+  })
+  async unregister(
+    @Body() dto: RegisterDeviceDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    await this.service.unregisterDevice(user.id, dto.token);
   }
 }

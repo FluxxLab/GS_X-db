@@ -37,6 +37,7 @@ import { SetAdminDto } from './entities/set-admin.dto';
 import { DelegateDirectoryDto } from './dto/delegate-directory.dto';
 import { ListDirectoryDto } from './dto/list-directory.dto';
 import { SendDirectMessageDto } from './dto/send-direct-message.dto';
+import { AvatarUploadDto } from './dto/avatar-upload.dto';
 
 @ApiTags('delegates')
 @ApiBearerAuth()
@@ -178,6 +179,21 @@ export class DelegatesController {
   @ApiResponse({ status: 400, description: 'Bad request' })
   updateMe(@CurrentUser() user: AuthUser, @Body() dto: UpdateMeDto) {
     return this.service.updateProfile(user.id, dto);
+  }
+
+  @Post('me/avatar-upload')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      'Signed URL for a profile photo: PUT the file to uploadUrl, then PATCH /delegates/me with the publicUrl',
+  })
+  @ApiResponse({ status: 200, description: 'uploadUrl, key and publicUrl' })
+  @ApiResponse({
+    status: 503,
+    description: 'Uploads are not configured (no S3_BUCKET)',
+  })
+  avatarUpload(@Body() dto: AvatarUploadDto) {
+    return this.service.presignAvatar(dto.contentType);
   }
 
   @Get('admins')
