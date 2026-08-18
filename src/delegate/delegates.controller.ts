@@ -228,6 +228,16 @@ export class DelegatesController {
     return { count, connections };
   }
 
+  // Declared above the ':id' catch-all, like every other static path.
+  @Get('me/conversations')
+  @ApiOperation({
+    summary:
+      'Your DM threads (message inbox): other delegate, last message, unread count',
+  })
+  myConversations(@CurrentUser() user: AuthUser) {
+    return this.service.listConversations(user.id);
+  }
+
   @Post(':id/messages')
   @HttpCode(200)
   @ApiOperation({ summary: 'Send a direct message (chat bubble 💬 button)' })

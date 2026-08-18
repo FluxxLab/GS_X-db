@@ -539,4 +539,63 @@ export class DelegatesService {
     }
     return rows;
   }
+
+  // Every thread the caller is part of, newest first: the other delegate, the
+  // last message, and how many of theirs are still unread. Without this a
+  // delegate can only reach a DM by navigating to the sender's chat by hand,
+  // which is impossible if the sender is not in their directory listing.
+  async listConversations(callerId: string): Promise<
+    Array<{
+      delegate: DelegateDirectoryDto;
+      lastMessage: { body: string; createdAt: Date; senderId: string };
+      unread: number;
+    }>
+  > {
+    const rows = await this.messages
+      .createQueryBuilder('m')
+      .where('m.senderId = :id OR m.recipientId = :id', { id: callerId })
+      .orderBy('m.createdAt', 'DESC')
+      .getMany();
+
+    // rows are newest first, so the first row seen for a pair is its last message
+    const threads = new Map<
+      string,
+      { otherId: string; last: DirectMessage; unread: number }
+    >();
+    for (const m of rows) {
+      const otherId = m.senderId === callerId ? m.recipientId : m.senderId;
+      const thread = threads.get(m.pairKey) ?? { otherId, last: m, unread: 0 };
+      if (m.recipientId === callerId && !m.readAt) thread.unread += 1;
+      threads.set(m.pairKey, thread);
+    }
+    if (threads.size === 0) return [];
+
+    const others = await this.delegateRepository.find({
+      where: { id: In(Array.from(threads.values()).map((t) => t.otherId)) },
+    });
+    const byId = new Map(others.map((d) => [d.id, d]));
+
+    const out: Array<{
+      delegate: DelegateDirectoryDto;
+      lastMessage: { body: string; createdAt: Date; senderId: string };
+      unread: number;
+    }> = [];
+    const ordered = Array.from(threads.values()).sort(
+      (a, b) => b.last.createdAt.getTime() - a.last.createdAt.getTime(),
+    );
+    for (const t of ordered) {
+      const other = byId.get(t.otherId);
+      if (!other) continue;
+      out.push({
+        delegate: DelegatesService.toDirectoryView(other),
+        lastMessage: {
+          body: t.last.body,
+          createdAt: t.last.createdAt,
+          senderId: t.last.senderId,
+        },
+        unread: t.unread,
+      });
+    }
+    return out;
+  }
 }
