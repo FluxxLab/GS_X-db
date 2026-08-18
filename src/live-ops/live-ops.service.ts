@@ -81,7 +81,7 @@ export class LiveOpsService {
 
   private async broadcastFlags(sessionId: string): Promise<BroadcastFlags> {
     const flags = await this.getflags(sessionId);
-    this.realtime.emitRoom(Rooms.session(sessionId), 'broadcast:flags', flags);
+   this.realtime.emitToRoom(Rooms.session(sessionId), 'broadcast:flags', flags);
     return flags;
   }
 }
