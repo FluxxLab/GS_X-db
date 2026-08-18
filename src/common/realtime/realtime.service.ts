@@ -24,7 +24,9 @@ export class RealtimeService {
     this.server = server;
   }
 
-  emitToRoom(room: string, event: string, payload: unknown): void {
+  // Accepts several rooms so one emit can reach both an open thread and the
+  // recipient's personal room; socket.io delivers once to a socket in both.
+  emitToRoom(room: string | string[], event: string, payload: unknown): void {
     if (!this.server) {
       this.logger.warn(`emit before gateway init: ${event} ->${room}`);
       return;
