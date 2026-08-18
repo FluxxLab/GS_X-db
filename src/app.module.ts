@@ -10,6 +10,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
 import { DelegateModule } from './delegate/delegate.module';
+import { ResourcesModule } from './resources/resources.module';
 import { validateEnv } from './config/env.validation';
 import { RealtimeModule } from './common/realtime/realtime.module';
 import { RedisModule } from './common/redis/redis.module';
@@ -68,6 +69,7 @@ import { SearchModule } from './search/search.module';
     AdminModule,
     LiveOpsModule,
     CaptionsModule,
+    ResourcesModule,
     SearchModule,
   ],
   controllers: [AppController],

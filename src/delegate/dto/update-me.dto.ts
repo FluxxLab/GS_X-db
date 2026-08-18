@@ -1,4 +1,11 @@
-import { IsOptional, IsString, IsArray, ArrayMaxSize } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  IsArray,
+  ArrayMaxSize,
+  IsUrl,
+  MaxLength,
+} from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateMeDto {
@@ -18,4 +25,14 @@ export class UpdateMeDto {
   @IsString({ each: true })
   @ArrayMaxSize(5, { each: true })
   interests?: string[];
+
+  @ApiPropertyOptional({
+    description:
+      'Public URL from POST /delegates/me/avatar-upload, saved once the PUT to S3 succeeds',
+  })
+  @IsOptional()
+  @IsString()
+  @IsUrl()
+  @MaxLength(512)
+  avatarUrl?: string;
 }

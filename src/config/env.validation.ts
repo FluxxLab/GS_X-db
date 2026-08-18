@@ -38,6 +38,18 @@ export class EnvironmentVariables {
   @IsOptional() @IsString() TERMII_SENDER_ID?: string;
 
   @IsInt() @Min(1) @Max(65535) REDIS_PORT: number;
+
+  // Uploads (avatars, documents). Optional: without S3_BUCKET the presign
+  // routes return 503 and everything else still runs. Credentials are not
+  // here on purpose - the SDK reads the EC2 instance role.
+  @IsOptional() @IsString() S3_BUCKET?: string;
+  @IsOptional() @IsString() S3_REGION?: string;
+
+  // Push. Without FIREBASE_PROJECT_ID the module falls back to LogPushSender,
+  // which logs instead of delivering - so push silently does nothing.
+  @IsOptional() @IsString() FIREBASE_PROJECT_ID?: string;
+  @IsOptional() @IsString() FIREBASE_CLIENT_EMAIL?: string;
+  @IsOptional() @IsString() FIREBASE_PRIVATE_KEY?: string;
 }
 
 export function validateEnv(config: Record<string, unknown>) {
