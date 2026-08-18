@@ -28,7 +28,8 @@ export class RealtimeService {
   // recipient's personal room; socket.io delivers once to a socket in both.
   emitToRoom(room: string | string[], event: string, payload: unknown): void {
     if (!this.server) {
-      this.logger.warn(`emit before gateway init: ${event} ->${room}`);
+      const target = Array.isArray(room) ? room.join(', ') : room;
+      this.logger.warn(`emit before gateway init: ${event} -> ${target}`);
       return;
     }
 
