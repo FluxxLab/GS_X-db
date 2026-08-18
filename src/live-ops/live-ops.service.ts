@@ -41,7 +41,10 @@ export class LiveOpsService {
     return { sessions };
   }
 
-  async setCutToBreak(sessionId: string, active: boolean): Promise<BroadcastFlags> {
+  async setCutToBreak(
+    sessionId: string,
+    active: boolean,
+  ): Promise<BroadcastFlags> {
     await this.redis.set(FLAG_KEYS(sessionId).cutToBreak, active ? '1' : '0');
     return this.broadcastFlags(sessionId);
   }
@@ -81,7 +84,11 @@ export class LiveOpsService {
 
   private async broadcastFlags(sessionId: string): Promise<BroadcastFlags> {
     const flags = await this.getflags(sessionId);
-   this.realtime.emitToRoom(Rooms.session(sessionId), 'broadcast:flags', flags);
+    this.realtime.emitToRoom(
+      Rooms.session(sessionId),
+      'broadcast:flags',
+      flags,
+    );
     return flags;
   }
 }

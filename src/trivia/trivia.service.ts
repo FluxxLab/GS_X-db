@@ -122,14 +122,10 @@ export class TriviaService {
     question.status = TriviaStatus.LIVE;
     const saved = await this.questions.save(question);
     const distribution = await this.distribution(saved.id);
-    this.realtime.emitToRoom(
-      Rooms.trivia,
-      'trivia:question',
-      {
-        ...this.toDelegateShape(saved),
-        playersCount: Object.values(distribution).reduce((a, b) => a + b, 0),
-      },
-    );
+    this.realtime.emitToRoom(Rooms.trivia, 'trivia:question', {
+      ...this.toDelegateShape(saved),
+      playersCount: Object.values(distribution).reduce((a, b) => a + b, 0),
+    });
     return saved;
   }
 

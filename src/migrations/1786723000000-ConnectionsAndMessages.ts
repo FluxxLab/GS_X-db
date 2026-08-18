@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class ConnectionsAndMessages1786723000000
-  implements MigrationInterface
-{
+export class ConnectionsAndMessages1786723000000 implements MigrationInterface {
   name = 'ConnectionsAndMessages1786723000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

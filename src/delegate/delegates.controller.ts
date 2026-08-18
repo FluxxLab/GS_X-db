@@ -22,7 +22,10 @@ import { Audit } from '../common/decorators/audit.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { AccessTier } from './entities/delegate.entity';
-import { CreateRegistrationEntryDto, UpdateRegistrationEntryDto } from './dto/create-delegate.dto';
+import {
+  CreateRegistrationEntryDto,
+  UpdateRegistrationEntryDto,
+} from './dto/create-delegate.dto';
 import { SetTierDto } from './dto/set-tier.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthUser } from '../auth/strategies/jwt.stategies';

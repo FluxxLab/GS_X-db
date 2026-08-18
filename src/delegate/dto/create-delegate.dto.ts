@@ -44,4 +44,6 @@ export class CreateRegistrationEntryDto {
   assignedTier: AccessTier;
 }
 
-export class UpdateRegistrationEntryDto extends PartialType(CreateRegistrationEntryDto) {}
+export class UpdateRegistrationEntryDto extends PartialType(
+  CreateRegistrationEntryDto,
+) {}
