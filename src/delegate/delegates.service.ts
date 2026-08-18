@@ -287,10 +287,14 @@ export class DelegatesService {
     const offset = query.offset ?? 0;
     const q = query.q?.trim();
 
+    // Delegates only: admin accounts are staff, not attendees, so they do not
+    // belong in the networking list. Delegates awaiting review are included -
+    // excluding them left the directory empty at an event where most delegates
+    // self-register. Flagged accounts remain hidden.
     const qb = this.delegateRepository
       .createQueryBuilder('d')
       .where('d.flagged = :f', { f: false })
-      .andWhere('d.pendingReview = :pr', { pr: false });
+      .andWhere('d.accessTier != :admin', { admin: AccessTier.ADMIN });
 
     if (q) {
       qb.andWhere(
@@ -373,10 +377,10 @@ export class DelegatesService {
     if (!target) {
       throw new NotFoundException('Target delegate not found');
     }
-    if (target.flagged || target.pendingReview) {
-      throw new BadRequestException(
-        'Cannot connect: delegate is pending review or flagged',
-      );
+    // Pending-review delegates are visible in the directory, so connecting to
+    // them has to work too; only flagged accounts are refused.
+    if (target.flagged) {
+      throw new BadRequestException('Cannot connect: delegate is flagged');
     }
 
     const pairKey = DelegatesService.pairKey(fromId, toId);
