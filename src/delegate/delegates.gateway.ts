@@ -16,7 +16,10 @@ export class DelegatesGateway {
   // The pair key is derived from the authenticated socket (set by the sessions
   // gateway handshake), never from the client, so a delegate can only join a
   // thread they are one half of.
-  private static dmRoom(socket: Socket, otherDelegateId: string): string | null {
+  private static dmRoom(
+    socket: Socket,
+    otherDelegateId: string,
+  ): string | null {
     const selfId = (socket.data.user as { id?: string } | undefined)?.id;
     if (!selfId || !otherDelegateId || selfId === otherDelegateId) return null;
     return Rooms.dm(DelegatesService.pairKey(selfId, otherDelegateId));

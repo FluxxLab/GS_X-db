@@ -11,7 +11,10 @@ import { IsNull, Repository, In } from 'typeorm';
 import { AudienceSegment } from 'src/notifications/entities/notification.entity';
 import { RegistrationEntry } from './entities/registration-entry.entity';
 import { randomBytes } from 'crypto';
-import { CreateRegistrationEntryDto, UpdateRegistrationEntryDto } from './dto/create-delegate.dto';
+import {
+  CreateRegistrationEntryDto,
+  UpdateRegistrationEntryDto,
+} from './dto/create-delegate.dto';
 import { UpdateMeDto } from './dto/update-me.dto';
 import { DelegateDirectoryDto } from './dto/delegate-directory.dto';
 import { ListDirectoryDto } from './dto/list-directory.dto';
@@ -150,15 +153,18 @@ export class DelegatesService {
     return this.registrationRepository.find();
   }
 
-  async updateRegistrationEntry(id: string, dto: UpdateRegistrationEntryDto): Promise<RegistrationEntry> {
+  async updateRegistrationEntry(
+    id: string,
+    dto: UpdateRegistrationEntryDto,
+  ): Promise<RegistrationEntry> {
     const entry = await this.registrationRepository.findOneBy({ id });
     if (!entry) throw new NotFoundException('Registration entry not found');
-    
+
     if (dto.email !== undefined) entry.email = dto.email?.toLowerCase() ?? null;
     if (dto.inviteCode !== undefined) entry.inviteCode = dto.inviteCode;
     if (dto.name !== undefined) entry.name = dto.name;
     if (dto.assignedTier !== undefined) entry.assignedTier = dto.assignedTier;
-    
+
     return this.registrationRepository.save(entry);
   }
 
