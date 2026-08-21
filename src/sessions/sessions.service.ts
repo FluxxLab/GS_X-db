@@ -9,6 +9,7 @@ import { SessionAttendance } from './entities/attendance.entity';
 import { Session, SessionStatus } from './entities/session.entity';
 import { Speaker } from './entities/speaker.entity';
 import { RealtimeService, Rooms } from 'src/common/realtime/realtime.service';
+
 @Injectable()
 export class SessionsService {
   constructor(
@@ -25,22 +26,20 @@ export class SessionsService {
     private readonly attendance: Repository<SessionAttendance>,
 
     private readonly realtime: RealtimeService,
-  ) {}
+  ) { }
 
   list(query: QuerySessionsDto) {
     return this.sessions.find({
       where: {
         ...(query.day !== undefined && { day: query.day }),
         ...(query.track !== undefined && { track: query.track }),
+        ...(query.status !== undefined && { status: query.status }),
       },
-      relations: {
-        speakers: true,
-      },
-      order: {
-        startsAt: 'ASC',
-      },
+      relations: { speakers: true },
+      order: { startsAt: 'ASC' },
     });
   }
+
 
   findLiveNow(): Promise<Session[]> {
     /**
@@ -83,8 +82,8 @@ export class SessionsService {
       endsAt: new Date(dto.endsAt),
       speakers: speakerIds?.length
         ? await this.speakers.findBy({
-            id: In(speakerIds),
-          })
+          id: In(speakerIds),
+        })
         : [],
     });
     return this.sessions.save(session);
@@ -96,21 +95,26 @@ export class SessionsService {
 
   async update(id: string, dto: UpdateSessionDto): Promise<Session> {
     const session = await this.findById(id);
-    const { speakerIds, startsAt, endsAt, ...data } = dto;
+    const { speakerIds, startsAt, endsAt, status, ...data } = dto;
     Object.assign(session, data);
 
     if (startsAt) session.startsAt = new Date(startsAt);
     if (endsAt) session.endsAt = new Date(endsAt);
-
-    // was silently discarded: an edit returned 200 and changed nothing
     if (speakerIds) {
       session.speakers = speakerIds.length
         ? await this.speakers.findBy({ id: In(speakerIds) })
         : [];
     }
 
-    return this.sessions.save(session);
+    const saved = await this.sessions.save(session);
+
+    // status is a transition, not a field write — reuse the one path
+    // that emits to the room and trips the audit interceptor
+    return status && status !== session.status
+      ? this.setStatus(id, status)
+      : saved;
   }
+
 
   async setStatus(id: string, status: SessionStatus): Promise<Session> {
     const session = await this.findById(id);

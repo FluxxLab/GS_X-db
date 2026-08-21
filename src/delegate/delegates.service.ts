@@ -2,11 +2,13 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  UnauthorizedException,
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { AccessTier, Delegate } from './entities/delegate.entity';
-import { IsNull, Repository, In } from 'typeorm';
+import { DataSource, IsNull, Repository, In } from 'typeorm';
+import * as bcrypt from 'bcrypt';
 
 import { AudienceSegment } from 'src/notifications/entities/notification.entity';
 import { RegistrationEntry } from './entities/registration-entry.entity';
@@ -39,6 +41,7 @@ export class DelegatesService {
     private readonly messages: Repository<DirectMessage>,
     private readonly realtime: RealtimeService,
     private readonly storage: StorageService,
+    private readonly dataSource: DataSource,
   ) {}
 
   findByEmailForAuth(email: string): Promise<Delegate | null> {
@@ -632,5 +635,92 @@ export class DelegatesService {
       folder: 'delegate-avatars',
       contentType,
     });
+  }
+
+  /**
+   * Delete the account and every row that identifies this delegate.
+   *
+   * Required by both app stores for any app that lets people create an account
+   * (Play since 2023, Apple guideline 5.1.1(v)), and the right default under
+   * NDPR/GDPR. Runs in one transaction so a partial delete cannot leave an
+   * orphaned session or an unreachable message thread.
+   *
+   * Kept deliberately: security audit events, which are a record of what
+   * happened on the platform rather than profile data, and are keyed by action
+   * rather than by delegate.
+   */
+  async deleteAccount(delegateId: string, password: string): Promise<void> {
+    // passwordHash is select:false on the entity, so it has to be asked for
+    const delegate = await this.delegateRepository
+      .createQueryBuilder('d')
+      .addSelect('d.passwordHash')
+      .where('d.id = :id', { id: delegateId })
+      .getOne();
+    if (!delegate) throw new NotFoundException('Delegate not found');
+
+    const ok = await bcrypt.compare(password, delegate.passwordHash);
+    if (!ok) throw new UnauthorizedException('Password is incorrect');
+
+    // same guard as revoking admin: never let the platform lose its last admin
+    if (delegate.accessTier === AccessTier.ADMIN) {
+      const admins = await this.delegateRepository.countBy({
+        accessTier: AccessTier.ADMIN,
+      });
+      if (admins <= 1) {
+        throw new BadRequestException(
+          'Cannot delete the last remaining admin account',
+        );
+      }
+    }
+
+    await this.dataSource.transaction(async (tx) => {
+      // sessions and push first, so the account stops being reachable
+      await tx.query('DELETE FROM refresh_tokens WHERE "userId" = $1', [
+        delegateId,
+      ]);
+      await tx.query('DELETE FROM device_tokens WHERE "delegateId" = $1', [
+        delegateId,
+      ]);
+
+      // anything addressed to or from them, in both directions
+      await tx.query(
+        'DELETE FROM direct_messages WHERE "senderId" = $1 OR "recipientId" = $1',
+        [delegateId],
+      );
+      await tx.query(
+        'DELETE FROM delegate_connections WHERE "fromDelegateId" = $1 OR "toDelegateId" = $1',
+        [delegateId],
+      );
+
+      // their own activity
+      await tx.query('DELETE FROM session_comments WHERE "authorId" = $1', [
+        delegateId,
+      ]);
+      await tx.query('DELETE FROM session_bookmarks WHERE "delegateId" = $1', [
+        delegateId,
+      ]);
+      await tx.query('DELETE FROM session_attendance WHERE "delegateId" = $1', [
+        delegateId,
+      ]);
+      await tx.query('DELETE FROM certificates WHERE "delegateId" = $1', [
+        delegateId,
+      ]);
+      await tx.query('DELETE FROM pitch_votes WHERE "delegateId" = $1', [
+        delegateId,
+      ]);
+      await tx.query('DELETE FROM trivia_answers WHERE "delegateId" = $1', [
+        delegateId,
+      ]);
+
+      // release the invite so the same person can register again later
+      await tx.query(
+        'UPDATE registration_entries SET "claimedAt" = NULL, "claimedByDelegateId" = NULL WHERE "claimedByDelegateId" = $1',
+        [delegateId],
+      );
+
+      await tx.query('DELETE FROM delegates WHERE id = $1', [delegateId]);
+    });
+
+    this.logger.log(`account deleted ${delegateId.slice(0, 8)}…`);
   }
 }

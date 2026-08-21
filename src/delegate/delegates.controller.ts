@@ -38,6 +38,7 @@ import { DelegateDirectoryDto } from './dto/delegate-directory.dto';
 import { ListDirectoryDto } from './dto/list-directory.dto';
 import { SendDirectMessageDto } from './dto/send-direct-message.dto';
 import { AvatarUploadDto } from './dto/avatar-upload.dto';
+import { DeleteAccountDto } from './dto/delete-account.dto';
 
 @ApiTags('delegates')
 @ApiBearerAuth()
@@ -194,6 +195,26 @@ export class DelegatesController {
   })
   avatarUpload(@Body() dto: AvatarUploadDto) {
     return this.service.presignAvatar(dto.contentType);
+  }
+
+  @Delete('me')
+  @HttpCode(204)
+  @ApiOperation({
+    summary:
+      'Delete your account and all data identifying you. Irreversible; confirmed with your password.',
+  })
+  @ApiResponse({
+    status: 204,
+    description: 'Account and personal data removed',
+  })
+  @ApiResponse({ status: 401, description: 'Password is incorrect' })
+  @Audit({
+    type: 'delegate_deleted_account',
+    description: 'Delegate deleted their own account',
+    severity: EventSeverity.WARNING,
+  })
+  async deleteMe(@CurrentUser() user: AuthUser, @Body() dto: DeleteAccountDto) {
+    await this.service.deleteAccount(user.id, dto.password);
   }
 
   @Get('admins')
