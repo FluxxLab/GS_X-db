@@ -33,7 +33,8 @@
     "typeorm": "typeorm-ts-node-commonjs -d src/config/data-source.ts",
     "migration:generate": "pnpm typeorm migration:generate",
     "migration:run": "pnpm typeorm migration:run",
-    "migration:revert": "pnpm typeorm migration:revert"
+    "migration:revert": "pnpm typeorm migration:revert",
+    "migration:run:prod": "typeorm migration:run -d dist/config/data-source.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",
