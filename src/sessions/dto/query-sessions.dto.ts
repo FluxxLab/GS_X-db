@@ -1,7 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsEnum, IsInt, IsOptional, Max, Min } from 'class-validator';
-import { SessionTrack } from '../entities/session.entity';
+import { SessionStatus, SessionTrack } from '../entities/session.entity';
 
 export class QuerySessionsDto {
   @ApiPropertyOptional()
@@ -16,4 +16,9 @@ export class QuerySessionsDto {
   @IsOptional()
   @IsEnum(SessionTrack)
   track?: SessionTrack;
+
+  @ApiPropertyOptional({ enum: SessionStatus })
+  @IsOptional()
+  @IsEnum(SessionStatus)
+  status?: SessionStatus;
 }
