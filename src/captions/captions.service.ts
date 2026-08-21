@@ -66,7 +66,18 @@ export class CaptionsService implements OnModuleDestroy {
     try {
       stream = await this.transcription.openStream(
         { room, keywords: SUMMIT_KEYWORDS },
-        (event) => void this.onTranscript(room, event),
+        (event) =>
+          void this.onTranscript(room, event).catch((error) =>
+            /**
+             * Fire-and-forget by design, so without this a failure here -
+             * a missing column, a dropped connection - disappears entirely
+             * and captions simply stop being saved with nothing to explain
+             * why.
+             */
+            this.logger.error(
+              `caption handling failed (${room}): ${(error as Error).message}`,
+            ),
+          ),
       );
     } catch (error) {
       this.pendingAudio.delete(room);
