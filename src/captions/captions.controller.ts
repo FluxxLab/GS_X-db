@@ -79,7 +79,7 @@ export class CaptionsController {
     };
   }
 
-  @Get(':/sessionId/transcript')
+  @Get(':sessionId/transcript')
   @Roles(AccessTier.ADMIN)
   @ApiOperation({ summary: 'full caption transcript for a session(admin' })
   transcript(@Param('sessionId', ParseUUIDPipe) sessionId: string) {
