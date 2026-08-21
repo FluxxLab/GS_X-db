@@ -10,6 +10,9 @@ import { TranscriptSegment } from './entities/transcript-segment.entity';
 import { DeepTranscriptionProvider } from './transcription/deepgram.provider';
 import { FakeTranscriptionProvider } from './transcription/fake.provider';
 import { TRANSCRIPTION_PROVIDER } from './transcription/transcription.interface';
+import { ClaudeTranslationProvider } from './translation/claude.provider';
+import { NoopTranslationProvider } from './translation/noop.provider';
+import { TRANSLATION_PROVIDER } from './translation/translation.interface';
 
 @Module({
   imports: [TypeOrmModule.forFeature([TranscriptSegment]), SessionsModule],
@@ -26,7 +29,15 @@ import { TRANSCRIPTION_PROVIDER } from './transcription/transcription.interface'
           ? new DeepTranscriptionProvider(config)
           : new FakeTranscriptionProvider(),
     },
+    {
+      provide: TRANSLATION_PROVIDER,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) =>
+        config.get('ANTHROPIC_API_KEY')
+          ? new ClaudeTranslationProvider(config)
+          : new NoopTranslationProvider(),
+    },
   ],
   exports: [CaptionsService, LivekitService],
 })
-export class CaptionsModule { }
+export class CaptionsModule {}

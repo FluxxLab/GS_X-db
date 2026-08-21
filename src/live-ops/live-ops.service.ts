@@ -3,6 +3,7 @@ import Redis from 'ioredis';
 import { RealtimeService, Rooms } from '../common/realtime/realtime.service';
 import { REDIS } from '../common/redis/redis.module';
 import { SessionsService } from '../sessions/sessions.service';
+import { CaptionLanguage } from '../captions/translation/languages';
 
 const FLAG_KEYS = (sessionId: string) => ({
   cutToBreak: `liveops:cutToBreak:${sessionId}`,
@@ -33,7 +34,7 @@ export class LiveOpsService {
         title: s.title,
         room: s.room,
         viewers: await this.realtime.roomSize(Rooms.session(s.id)),
-        captionListeners: await this.realtime.roomSize(Rooms.caption(s.id)),
+        captionListeners: await this.captionListeners(s.id),
         capturing: (await this.redis.exists(`capture:room:${s.room}`)) === 1,
         flags: await this.getflags(s.id),
       })),
@@ -90,5 +91,18 @@ export class LiveOpsService {
       flags,
     );
     return flags;
+  }
+
+  /**
+   * Listeners are spread across one room per caption language, so the
+   * English room alone undercounts every delegate reading a translation.
+   */
+  private async captionListeners(sessionId: string): Promise<number> {
+    const perLanguage = await Promise.all(
+      Object.values(CaptionLanguage).map((language) =>
+        this.realtime.roomSize(Rooms.caption(sessionId, language)),
+      ),
+    );
+    return perLanguage.reduce((total, count) => total + count, 0);
   }
 }

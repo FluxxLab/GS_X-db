@@ -24,6 +24,15 @@ export class TranscriptSegment {
   @Column({ type: 'varchar', length: 255 })
   room: string;
 
+  /**
+   * Diarised voice index from the transcription provider, 0-based. Nullable:
+   * a provider that cannot attribute a segment is not an error, and the
+   * numbering restarts whenever the room's stream reopens, so it identifies a
+   * voice within one capture run rather than a person across the summit.
+   */
+  @Column({ type: 'smallint', nullable: true })
+  speaker: number | null;
+
   @Column({
     type: 'enum',
     enum: TranscriptSource,

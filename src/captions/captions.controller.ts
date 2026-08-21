@@ -106,16 +106,26 @@ export class CaptionsController {
       res.setHeader('Content-Type', 'text/plain; charset=utf-8');
       return res.send(
         segments
-          .map((s) => `[${s.createdAt.toISOString()}] ${s.text}`)
+          .map(
+            (s) =>
+              `[${s.createdAt.toISOString()}]${s.speaker === null ? '' : ` Speaker ${s.speaker + 1}:`} ${s.text}`,
+          )
           .join('\n'),
       );
     }
     const cell = (v: string | number | boolean | null | undefined) =>
       `"${String(v ?? '').replace(/"/g, '""')}"`;
     const rows = [
-      'createdAt,room,source,text',
+      'createdAt,room,speaker,source,text',
       ...segments.map((s) =>
-        [s.createdAt.toISOString(), s.room, s.source, cell(s.text)].join(','),
+        [
+          s.createdAt.toISOString(),
+          s.room,
+          // 1-based for readers; empty when the segment was not diarised.
+          s.speaker === null ? '' : s.speaker + 1,
+          s.source,
+          cell(s.text),
+        ].join(','),
       ),
     ];
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
