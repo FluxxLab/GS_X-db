@@ -28,6 +28,15 @@ export class CaptionsService implements OnModuleDestroy {
    */
   private readonly activeRooms = new Map<string, TranscriptionStream>();
 
+  /**
+   * Audio that arrived while Deepgram was still connecting. The first
+   * MediaRecorder chunk carries the WebM/EBML header; every later chunk is a
+   * bare Opus cluster that cannot be decoded without it. Dropping the header
+   * because the stream was not open yet makes Deepgram reject the audio and
+   * close the socket, so these are queued and flushed in order instead.
+   */
+  private readonly pendingAudio = new Map<string, Buffer[]>();
+
   constructor(
     @InjectRepository(TranscriptSegment)
     private readonly segments: Repository<TranscriptSegment>,
@@ -40,13 +49,26 @@ export class CaptionsService implements OnModuleDestroy {
   ) {}
 
   async startRoom(room: string): Promise<void> {
-    if (this.activeRooms.has(room)) return; // indempotent - capture page reconnect happen
+    // indempotent - capture page reconnect happen
+    if (this.activeRooms.has(room) || this.pendingAudio.has(room)) return;
 
-    const stream = await this.transcription.openStream(
-      { room, keywords: SUMMIT_KEYWORDS },
-      (event) => void this.onTranscript(room, event),
-    );
+    this.pendingAudio.set(room, []);
+    let stream: TranscriptionStream;
+    try {
+      stream = await this.transcription.openStream(
+        { room, keywords: SUMMIT_KEYWORDS },
+        (event) => void this.onTranscript(room, event),
+      );
+    } catch (error) {
+      this.pendingAudio.delete(room);
+      throw error;
+    }
     this.activeRooms.set(room, stream);
+
+    const queued = this.pendingAudio.get(room) ?? [];
+    this.pendingAudio.delete(room);
+    for (const chunk of queued) this.sendAudio(room, chunk);
+
     await this.redis.set(
       this.captureKey(room),
       new Date().toISOString(),
@@ -56,10 +78,32 @@ export class CaptionsService implements OnModuleDestroy {
   }
 
   sendAudio(room: string, chunk: Buffer): void {
-    this.activeRooms.get(room)?.sendAudio(chunk);
+    const queue = this.pendingAudio.get(room);
+    if (queue) {
+      queue.push(chunk);
+      return;
+    }
+
+    const stream = this.activeRooms.get(room);
+    if (!stream) return;
+
+    try {
+      stream.sendAudio(chunk);
+    } catch (error) {
+      /**
+       * Deepgram hung up. Forget the room rather than throw once per 250ms
+       * chunk: the capture heartbeat then expires and live-ops shows the room
+       * unhealthy, which is the signal an operator can act on.
+       */
+      this.activeRooms.delete(room);
+      this.logger.warn(
+        `Deepgram stream unusable (${room}): ${(error as Error).message}`,
+      );
+    }
   }
 
   async stopRoom(room: string): Promise<void> {
+    this.pendingAudio.delete(room);
     await this.activeRooms.get(room)?.close();
     await this.redis.del(this.captureKey(room));
     this.activeRooms.delete(room);
