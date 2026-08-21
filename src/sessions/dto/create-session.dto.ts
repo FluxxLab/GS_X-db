@@ -65,7 +65,10 @@ export class CreateSessionDto {
   @IsOptional()
   speakerIds?: string[];
 
-  @ApiPropertyOptional({ enum: SessionStatus, default: SessionStatus.SCHEDULED })
+  @ApiPropertyOptional({
+    enum: SessionStatus,
+    default: SessionStatus.SCHEDULED,
+  })
   @IsOptional()
   @IsEnum(SessionStatus)
   status?: SessionStatus;

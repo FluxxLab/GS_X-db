@@ -3,7 +3,14 @@ import type { Server } from 'socket.io';
 
 export const Rooms = {
   session: (id: string) => `session:${id}`,
-  caption: (sessionId: string) => `captions:${sessionId}`,
+  /**
+   * English keeps the original room name, so mobile and admin clients that
+   * joined before translation existed keep working unchanged.
+   */
+  caption: (sessionId: string, language: string = 'en') =>
+    language === 'en'
+      ? `captions:${sessionId}`
+      : `captions:${sessionId}:${language}`,
   discussion: (sessionId: string) => `discussion:${sessionId}`,
   voting: 'voting',
   trivia: 'trivia',

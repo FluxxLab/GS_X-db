@@ -7,6 +7,25 @@ import {
 import type { Socket } from 'socket.io';
 import { Rooms } from '../common/realtime/realtime.service';
 import { CaptionsService } from './captions.service';
+import { CaptionLanguage, toCaptionLanguage } from './translation/languages';
+
+/**
+ * Delegates on older builds send a bare sessionId, which means English.
+ */
+type CaptionSubscription = string | { sessionId: string; language?: string };
+
+function parseSubscription(body: CaptionSubscription): {
+  sessionId: string;
+  language: CaptionLanguage;
+} {
+  if (typeof body === 'string') {
+    return { sessionId: body, language: CaptionLanguage.EN };
+  }
+  return {
+    sessionId: body.sessionId,
+    language: toCaptionLanguage(body.language),
+  };
+}
 
 @WebSocketGateway({ cors: { origin: '*' } })
 export class CaptionsGateway {
@@ -16,15 +35,23 @@ export class CaptionsGateway {
    * delegate side
    */
   @SubscribeMessage('captions:join')
-  join(@ConnectedSocket() socket: Socket, @MessageBody() sessionId: string) {
-    socket.join(Rooms.caption(sessionId));
-    return { joined: sessionId };
+  join(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody() body: CaptionSubscription,
+  ) {
+    const { sessionId, language } = parseSubscription(body);
+    socket.join(Rooms.caption(sessionId, language));
+    return { joined: sessionId, language };
   }
 
   @SubscribeMessage('captions:leave')
-  leave(@ConnectedSocket() socket: Socket, @MessageBody() sessionId: string) {
-    socket.leave(Rooms.caption(sessionId));
-    return { left: sessionId };
+  leave(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody() body: CaptionSubscription,
+  ) {
+    const { sessionId, language } = parseSubscription(body);
+    socket.leave(Rooms.caption(sessionId, language));
+    return { left: sessionId, language };
   }
 
   /**

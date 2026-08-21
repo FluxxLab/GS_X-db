@@ -26,7 +26,7 @@ export class SessionsService {
     private readonly attendance: Repository<SessionAttendance>,
 
     private readonly realtime: RealtimeService,
-  ) { }
+  ) {}
 
   list(query: QuerySessionsDto) {
     return this.sessions.find({
@@ -39,7 +39,6 @@ export class SessionsService {
       order: { startsAt: 'ASC' },
     });
   }
-
 
   findLiveNow(): Promise<Session[]> {
     /**
@@ -57,9 +56,17 @@ export class SessionsService {
   }
 
   findLiveInRoom(room: string): Promise<Session | null> {
-    return this.sessions.findOne({
-      where: { room, status: SessionStatus.LIVE },
-    });
+    /**
+     * Matched loosely on purpose. The capture page sends whichever room string
+     * the operator picked, and an exact match means one stray space or a
+     * different capitalisation silently drops every caption for the session,
+     * with no error raised anywhere to explain it.
+     */
+    return this.sessions
+      .createQueryBuilder('s')
+      .where('LOWER(TRIM(s.room)) = LOWER(TRIM(:room))', { room })
+      .andWhere('s.status = :status', { status: SessionStatus.LIVE })
+      .getOne();
   }
 
   async findById(id: string): Promise<Session> {
@@ -82,8 +89,8 @@ export class SessionsService {
       endsAt: new Date(dto.endsAt),
       speakers: speakerIds?.length
         ? await this.speakers.findBy({
-          id: In(speakerIds),
-        })
+            id: In(speakerIds),
+          })
         : [],
     });
     return this.sessions.save(session);
@@ -114,7 +121,6 @@ export class SessionsService {
       ? this.setStatus(id, status)
       : saved;
   }
-
 
   async setStatus(id: string, status: SessionStatus): Promise<Session> {
     const session = await this.findById(id);

@@ -12,6 +12,13 @@ import type {
 } from './transcription/transcription.interface';
 import { REDIS } from 'src/common/redis/redis.module';
 import { Redis } from 'ioredis';
+import { createHash } from 'node:crypto';
+import { CaptionLanguage } from './translation/languages';
+import { TRANSLATION_PROVIDER } from './translation/translation.interface';
+import type {
+  TranslationProvider,
+  Translations,
+} from './translation/translation.interface';
 
 /**
  * extends from the agenda
@@ -42,6 +49,8 @@ export class CaptionsService implements OnModuleDestroy {
     private readonly segments: Repository<TranscriptSegment>,
     @Inject(TRANSCRIPTION_PROVIDER)
     private readonly transcription: TranscriptionProvider,
+    @Inject(TRANSLATION_PROVIDER)
+    private readonly translation: TranslationProvider,
     private readonly session: SessionsService,
     private readonly realtime: RealtimeService,
     @Inject(REDIS)
@@ -131,14 +140,83 @@ export class CaptionsService implements OnModuleDestroy {
       text: event.text,
       isFinal: event.isFinal,
       aiGenerated: true,
+      language: CaptionLanguage.EN,
+      speaker: event.speaker,
       at: new Date().toISOString(),
     });
 
     if (event.isFinal) {
       await this.segments.save(
-        this.segments.create({ sessionId: session.id, room, text: event.text }),
+        this.segments.create({
+          sessionId: session.id,
+          room,
+          text: event.text,
+          speaker: event.speaker ?? null,
+        }),
+      );
+
+      /**
+       * Finals only. Interim results are revised several times a second, so
+       * translating them would multiply the bill for text that visibly
+       * rewrites itself, and a final lands on a phrase boundary where
+       * translation quality is best.
+       *
+       * Deliberately not awaited: a slow translation must never delay the
+       * English caption, which is the one on the screen in the room.
+       */
+      void this.translateAndEmit(session.id, event.text);
+    }
+  }
+
+  private async translateAndEmit(
+    sessionId: string,
+    text: string,
+  ): Promise<void> {
+    try {
+      const translations = await this.translate(text);
+      const at = new Date().toISOString();
+
+      for (const [language, translated] of Object.entries(translations)) {
+        if (!translated) continue;
+        this.realtime.emitToRoom(
+          Rooms.caption(sessionId, language),
+          'caption',
+          {
+            sessionId,
+            text: translated,
+            isFinal: true,
+            aiGenerated: true,
+            language,
+            at,
+          },
+        );
+      }
+    } catch (error) {
+      // Translation is additive. English captions carry on regardless.
+      this.logger.warn(
+        `translation failed (${sessionId}): ${(error as Error).message}`,
       );
     }
+  }
+
+  private async translate(text: string): Promise<Translations> {
+    const key = `caption:tr:${createHash('sha1').update(text).digest('hex')}`;
+
+    const cached = await this.redis.get(key);
+    if (cached) return JSON.parse(cached) as Translations;
+
+    const translations = await this.translation.translate(text);
+    if (Object.keys(translations).length > 0) {
+      // Sessions repeat terminology constantly - titles, names, recurring
+      // phrases - so a day of captions hits this often enough to matter.
+      await this.redis.set(
+        key,
+        JSON.stringify(translations),
+        'EX',
+        60 * 60 * 24,
+      );
+    }
+    return translations;
   }
 
   fullTranscript(sessionId: string): Promise<TranscriptSegment[]> {
