@@ -84,11 +84,11 @@ jobs:
             --document-name "AWS-RunShellScript" \
             --comment "deploy ${{ github.sha }}" \
             --parameters 'commands=[
-              "set -eo pipefail",
+              "set -e",
               "cd /opt/app",
               "sudo -H -u $(stat -c %U .) git pull --ff-only",
               "docker compose -f docker-compose.prod.yml up -d --build",
-              "for i in $(seq 1 30); do docker compose -f docker-compose.prod.yml exec -T api true && break; sleep 2; done",
+              "for i in $(seq 1 30); do if docker compose -f docker-compose.prod.yml exec -T api true; then break; fi; sleep 2; done",
               "docker compose -f docker-compose.prod.yml exec -T api npx typeorm -d dist/config/data-source.js migration:run",
               "docker image prune -f"
             ]' \
