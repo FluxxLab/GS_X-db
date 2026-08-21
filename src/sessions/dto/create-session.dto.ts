@@ -9,7 +9,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
-import { SessionTrack } from '../entities/session.entity';
+import { SessionTrack, SessionStatus } from '../entities/session.entity';
 
 export class CreateSessionDto {
   @ApiProperty()
@@ -64,4 +64,9 @@ export class CreateSessionDto {
   })
   @IsOptional()
   speakerIds?: string[];
+
+  @ApiPropertyOptional({ enum: SessionStatus, default: SessionStatus.SCHEDULED })
+  @IsOptional()
+  @IsEnum(SessionStatus)
+  status?: SessionStatus;
 }
