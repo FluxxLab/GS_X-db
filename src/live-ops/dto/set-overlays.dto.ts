@@ -5,7 +5,7 @@ export class setOverlaysDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
-  caption?: boolean;
+  captions?: boolean;
 
   @ApiPropertyOptional()
   @IsOptional()
