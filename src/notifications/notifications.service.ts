@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Not, Repository } from 'typeorm';
+import { In, IsNull, Not, Repository } from 'typeorm';
 import { DeviceToken } from './entities/device-token.entity';
 import { InjectQueue } from '@nestjs/bullmq';
 import { RealtimeService } from '../common/realtime/realtime.service';
@@ -8,8 +8,8 @@ import { CreateNotificationDto } from './dto/create-notification.dto';
 import { Notification } from './entities/notification.entity';
 import { Queue } from 'bullmq';
 import { AudienceSegment } from './entities/notification.entity';
+import { DelegatesService } from 'src/delegate/delegates.service';
 import { AccessTier } from 'src/delegate/entities/delegate.entity';
-import { In } from 'typeorm/browser';
 
 @Injectable()
 export class NotificationsService {
@@ -21,6 +21,7 @@ export class NotificationsService {
     @InjectQueue('notifications')
     private readonly queue: Queue,
     private readonly realtime: RealtimeService,
+    private readonly delegates: DelegatesService,
   ) {}
 
   async announce(dto: CreateNotificationDto): Promise<Notification> {
@@ -57,18 +58,22 @@ export class NotificationsService {
     await this.deviceTokens.delete({ delegateId, token });
   }
 
-  inboxFor(user: { id: string; role: AccessTier }): Promise<Notification[]> {
-    const segments = [AudienceSegment.ALL];
+  /**
+   * The segments a delegate can read back must be the segments they were sent,
+   * or an announcement arrives as a push and then cannot be found in the app.
+   * Membership is resolved by the same code that picks push recipients rather
+   * than a second, hand-maintained list.
+   */
+  async inboxFor(user: {
+    id: string;
+    role: AccessTier;
+  }): Promise<Notification[]> {
+    const segments =
+      user.role === AccessTier.ADMIN
+        ? // Organisers need to see everything that went out, from any device.
+          Object.values(AudienceSegment)
+        : await this.delegates.segmentsFor(user.id);
 
-    if (user.role === AccessTier.VIP || user.role === AccessTier.ADMIN)
-      segments.push(AudienceSegment.VIP);
-    if (user.role === AccessTier.PRESS) segments.push(AudienceSegment.PRESS);
-
-    /**
-     * Speakers/volunteers segments resolves via tags in the processor;
-     * inbox parity needs a join
-     * TODO: implement with delegate tags
-     */
     return this.notifications.find({
       where: { segment: In(segments), sentAt: Not(IsNull()) },
       order: { sentAt: 'DESC' },
