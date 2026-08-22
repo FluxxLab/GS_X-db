@@ -26,6 +26,16 @@ export class DirectMessage {
   @Column({ type: 'text' })
   body: string;
 
+  /**
+   * The message this one replies to, if any.
+   *
+   * Nullable and ON DELETE SET NULL rather than CASCADE: deleting a message
+   * must not take every reply to it with it. A reply whose parent is gone
+   * renders as an ordinary message, which is the honest outcome.
+   */
+  @Column({ type: 'uuid', nullable: true })
+  replyToId: string | null;
+
   @Column({ type: 'timestamptz', nullable: true })
   readAt: Date | null;
 
