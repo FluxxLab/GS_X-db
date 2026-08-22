@@ -168,7 +168,7 @@ export class DelegatesController {
   })
   @ApiResponse({ status: 400, description: 'Bad request' })
   me(@CurrentUser() user: AuthUser) {
-    return this.service.getProfile(user.id);
+    return this.service.profileView(user.id);
   }
 
   @Patch('me')
