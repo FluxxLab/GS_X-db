@@ -52,8 +52,15 @@ export class StorageService {
    * What gets persisted on the delegate is therefore the *key*, and a fresh
    * signed URL is minted whenever the record is read. Signing is local HMAC -
    * no network call - so doing it per row in a directory listing is cheap.
+   *
+   * The 45 minute default is bounded by the credentials, not by choice. These
+   * URLs are signed with the EC2 instance role's *temporary* credentials, and
+   * S3 rejects a presigned URL once the credentials behind it expire - so any
+   * expiry beyond the role's session duration (currently 1 hour on gs26-ssm) is
+   * a promise the URL cannot keep. Raising it means raising the role's session
+   * duration first, or signing with a long-lived principal instead.
    */
-  presignRead(key: string, expiresIn = 24 * 60 * 60): Promise<string> {
+  presignRead(key: string, expiresIn = 45 * 60): Promise<string> {
     if (!this.bucket)
       throw new ServiceUnavailableException('Uploads are not configured');
     return getSignedUrl(
