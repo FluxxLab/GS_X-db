@@ -24,6 +24,17 @@ export class SessionComment {
   @Column({ type: 'boolean', default: false })
   flagged: boolean;
 
+  /**
+   * Denormalised counters, maintained alongside comment_votes. A thread render
+   * reads every comment at once, so counting votes per row would put a join and
+   * an aggregate on the hot path for a number that changes rarely.
+   */
+  @Column({ type: 'int', default: 0 })
+  likes: number;
+
+  @Column({ type: 'int', default: 0 })
+  dislikes: number;
+
   @Column({ type: 'timestamptz', nullable: true })
   hiddenAt: Date | null;
 

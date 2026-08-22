@@ -20,6 +20,7 @@ import {
 import { DiscussionService } from './discussions.service';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { QueryCommentsDto } from './dto/query-comments.dto';
+import { VoteCommentDto } from './dto/vote-comment.dto';
 import { QueryAllCommentsDto } from './dto/query-all-comments.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthUser } from '../auth/strategies/jwt.stategies';
@@ -54,8 +55,31 @@ export class DiscussionsController {
   async getComments(
     @Param('sessionId', ParseUUIDPipe) sessionId: string,
     @Query() query: QueryCommentsDto,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.service.listComments(sessionId, query);
+    // the viewer is passed so each row can carry that delegate's own vote
+    return this.service.listComments(sessionId, query, user.id);
+  }
+
+  @Post('comments/:id/vote')
+  @ApiOperation({ summary: 'Like, dislike, or clear a vote on a comment' })
+  @ApiResponse({ status: 201, description: 'Updated counts and the new vote' })
+  @ApiParam({ name: 'id', description: 'Comment ID', type: String })
+  async voteComment(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: VoteCommentDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.service.vote(id, user.id, dto.value);
+  }
+
+  @Get('threads')
+  @Roles(AccessTier.ADMIN)
+  @ApiOperation({
+    summary: 'Forums: every session thread with its comment counts',
+  })
+  listThreads() {
+    return this.service.listThreads();
   }
 
   @Get('comments')

@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, LessThan, Not, Repository } from 'typeorm';
+import { In, IsNull, LessThan, Not, Repository } from 'typeorm';
 import {
   HiddenFilter,
   QueryAllCommentsDto,
@@ -10,6 +10,7 @@ import { SessionsService } from '../sessions/sessions.service';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { QueryCommentsDto } from './dto/query-comments.dto';
 import { SessionComment } from './entities/session-comment.entity';
+import { CommentVote, VoteValue } from './entities/comment-vote.entity';
 import { DelegatesService } from '../delegate/delegates.service';
 import { SecurityService } from '../security/security.service';
 
@@ -18,6 +19,8 @@ export class DiscussionService {
   constructor(
     @InjectRepository(SessionComment)
     private readonly comments: Repository<SessionComment>,
+    @InjectRepository(CommentVote)
+    private readonly votes: Repository<CommentVote>,
     private readonly sessions: SessionsService,
     private readonly realtime: RealtimeService,
     private readonly delegateService: DelegatesService,
@@ -52,7 +55,11 @@ export class DiscussionService {
     return comment;
   }
 
-  async listComments(sessionId: string, query: QueryCommentsDto) {
+  async listComments(
+    sessionId: string,
+    query: QueryCommentsDto,
+    viewerId?: string,
+  ) {
     const comments = await this.comments.find({
       where: {
         sessionId,
@@ -66,11 +73,99 @@ export class DiscussionService {
     const authors = await this.delegateService.namesByIds(
       comments.map((c) => c.authorId),
     );
+
+    /**
+     * One bulk lookup for the viewer's own votes rather than a per-row query:
+     * the client needs to render its buttons in the voted state, and a thread
+     * is read all at once.
+     */
+    const myVotes = await this.votesByViewer(
+      viewerId,
+      comments.map((c) => c.id),
+    );
+
     return comments.map((c) => ({
       ...c,
       authorName: authors.get(c.authorId)?.name ?? 'Delegate',
       authorOrganisation: authors.get(c.authorId)?.organisation ?? null,
+      myVote: myVotes.get(c.id) ?? null,
     }));
+  }
+
+  private async votesByViewer(
+    viewerId: string | undefined,
+    commentIds: string[],
+  ): Promise<Map<string, VoteValue>> {
+    if (!viewerId || commentIds.length === 0) return new Map();
+    const rows = await this.votes.find({
+      where: { delegateId: viewerId, commentId: In(commentIds) },
+    });
+    return new Map(rows.map((r) => [r.commentId, r.value]));
+  }
+
+  /**
+   * Casts, changes or clears one delegate's vote on a comment.
+   *
+   * The counters and the vote row move together in a transaction, and the
+   * counters move by SQL increment rather than by writing a value read a moment
+   * earlier - two delegates voting at once would otherwise both write the same
+   * number and lose one of the votes.
+   */
+  async vote(commentId: string, delegateId: string, value: VoteValue | null) {
+    const comment = await this.comments.findOne({ where: { id: commentId } });
+    if (!comment) throw new NotFoundException('Comment not found');
+
+    return this.comments.manager.transaction(async (manager) => {
+      const votes = manager.getRepository(CommentVote);
+      const existing = await votes.findOne({
+        where: { commentId, delegateId },
+      });
+      const previous = existing?.value ?? null;
+
+      if (previous !== value) {
+        if (value === null) {
+          await votes.delete({ commentId, delegateId });
+        } else if (existing) {
+          await votes.update({ id: existing.id }, { value });
+        } else {
+          await votes.insert({ commentId, delegateId, value });
+        }
+
+        let likeDelta = 0;
+        let dislikeDelta = 0;
+        if (previous === VoteValue.LIKE) likeDelta -= 1;
+        if (previous === VoteValue.DISLIKE) dislikeDelta -= 1;
+        if (value === VoteValue.LIKE) likeDelta += 1;
+        if (value === VoteValue.DISLIKE) dislikeDelta += 1;
+
+        if (likeDelta !== 0) {
+          await manager.increment(
+            SessionComment,
+            { id: commentId },
+            'likes',
+            likeDelta,
+          );
+        }
+        if (dislikeDelta !== 0) {
+          await manager.increment(
+            SessionComment,
+            { id: commentId },
+            'dislikes',
+            dislikeDelta,
+          );
+        }
+      }
+
+      const updated = await manager.findOneOrFail(SessionComment, {
+        where: { id: commentId },
+      });
+      return {
+        id: commentId,
+        likes: updated.likes,
+        dislikes: updated.dislikes,
+        myVote: value,
+      };
+    });
   }
 
   /**
@@ -111,6 +206,51 @@ export class DiscussionService {
       // comment came from.
       sessionTitle: sessionTitles.get(c.sessionId) ?? 'Unknown session',
     }));
+  }
+
+  /**
+   * One row per session, whether or not anyone has posted.
+   *
+   * listAllComments answers "what has been said"; this answers "where can it
+   * be said". A thread with no comments is invisible to the former, which
+   * makes a freshly created forum look like it failed to exist.
+   */
+  async listThreads() {
+    const sessions = await this.sessions.list({});
+
+    const counts = await this.comments
+      .createQueryBuilder('c')
+      .select('c.sessionId', 'sessionId')
+      .addSelect('COUNT(*)', 'comments')
+      .addSelect('COUNT(*) FILTER (WHERE c.flagged)', 'flagged')
+      .addSelect('COUNT(*) FILTER (WHERE c."hiddenAt" IS NOT NULL)', 'hidden')
+      .addSelect('MAX(c."createdAt")', 'lastAt')
+      .groupBy('c.sessionId')
+      .getRawMany<{
+        sessionId: string;
+        comments: string;
+        flagged: string;
+        hidden: string;
+        lastAt: Date | null;
+      }>();
+
+    const byId = new Map(counts.map((row) => [row.sessionId, row]));
+
+    return sessions.map((session) => {
+      const row = byId.get(session.id);
+      return {
+        sessionId: session.id,
+        title: session.title,
+        track: session.track,
+        type: session.type,
+        room: session.room,
+        // Counts arrive as strings from a raw aggregate.
+        comments: Number(row?.comments ?? 0),
+        flagged: Number(row?.flagged ?? 0),
+        hidden: Number(row?.hidden ?? 0),
+        lastAt: row?.lastAt ?? null,
+      };
+    });
   }
 
   private async sessionTitles(ids: string[]): Promise<Map<string, string>> {
