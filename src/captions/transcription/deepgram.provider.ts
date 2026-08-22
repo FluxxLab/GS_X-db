@@ -7,13 +7,53 @@ import type {
   TranscriptionStream,
 } from './transcription.interface';
 
+interface DiarisedWord {
+  word?: string;
+  punctuated_word?: string;
+  speaker?: number;
+}
+
+interface SpeakerRun {
+  text: string;
+  speaker?: number;
+}
+
 /**
- * Deepgram labels each word with a speaker, not each segment, so the segment
- * belongs to whoever said most of it. A segment that straddles a handover is
- * attributed to the dominant voice rather than split.
+ * Deepgram labels each *word* with a speaker, and a single final regularly
+ * spans a handover - a question and its answer arrive together.
+ *
+ * Attributing the whole final to whoever said most of it erases anyone who
+ * only interjects, which is indistinguishable from diarisation failing: one
+ * voice appears to hold the floor for the entire session. Splitting at each
+ * speaker change keeps both, at the cost of shorter segments.
  */
+function speakerRuns(
+  words: DiarisedWord[] | undefined,
+  fallbackText: string,
+): SpeakerRun[] {
+  if (!words?.length) return [{ text: fallbackText }];
+
+  const runs: SpeakerRun[] = [];
+  for (const word of words) {
+    // punctuated_word carries smart_format's punctuation and casing.
+    const token = word.punctuated_word ?? word.word;
+    if (!token) continue;
+
+    const current = runs[runs.length - 1];
+    if (current && current.speaker === word.speaker) {
+      current.text += ` ${token}`;
+    } else {
+      runs.push({ text: token, speaker: word.speaker });
+    }
+  }
+
+  return runs.length > 0 ? runs : [{ text: fallbackText }];
+}
+
+/** Whoever said most of a fragment. Interims are revised constantly, so they
+ *  get one speaker rather than being split into flickering runs. */
 function dominantSpeaker(
-  words: { speaker?: number }[] | undefined,
+  words: DiarisedWord[] | undefined,
 ): number | undefined {
   if (!words?.length) return undefined;
 
@@ -59,17 +99,36 @@ export class DeepTranscriptionProvider implements TranscriptionProvider {
       diarize_model: 'v1',
     });
 
+    /**
+     * Highest speaker index this stream has ever produced. Logged when it
+     * grows, so "everyone reads as one speaker" can be told apart from a
+     * problem downstream: if this never reaches 2, Deepgram genuinely is not
+     * separating the voices and the microphone is the thing to fix.
+     */
+    let voicesHeard = 0;
+
     conn.on('message', (message) => {
       if (message.type !== 'Results') return; //union also carries Metadata/UtteranceEnd/SpeechStarted
       const alternative = message.channel?.alternatives?.[0];
       const text = alternative?.transcript;
       if (!text) return;
 
-      onTranscript({
-        text,
-        isFinal: message.is_final === true,
-        speaker: dominantSpeaker(alternative?.words),
-      });
+      const words = alternative?.words as DiarisedWord[] | undefined;
+
+      if (message.is_final !== true) {
+        onTranscript({ text, isFinal: false, speaker: dominantSpeaker(words) });
+        return;
+      }
+
+      for (const run of speakerRuns(words, text)) {
+        if (run.speaker !== undefined && run.speaker + 1 > voicesHeard) {
+          voicesHeard = run.speaker + 1;
+          this.logger.log(
+            `Deepgram separating ${voicesHeard} voice(s) (${opts.room})`,
+          );
+        }
+        onTranscript({ text: run.text, isFinal: true, speaker: run.speaker });
+      }
     });
     conn.on('error', (e) =>
       this.logger.error(`Deepgram error (${opts.room}): ${e.message}`),

@@ -2,7 +2,18 @@ import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AccessToken } from 'livekit-server-sdk';
 
-const audioRoom = (room: string) => `audio:${room}`;
+/**
+ * LiveKit room name for a venue's audio.
+ *
+ * Normalised, because the two callers reach this from opposite directions: a
+ * publisher token is minted from whatever room string the capture operator
+ * typed, while a listener token is minted from the room stored on the session.
+ * `findLiveInRoom` already matches those loosely (LOWER/TRIM), so without the
+ * same normalisation here " Main Hall " and "Main Hall" mint tokens for two
+ * different LiveKit rooms: the delegate joins an empty one and hears silence,
+ * with nothing logged anywhere to explain it.
+ */
+const audioRoom = (room: string) => `audio:${room.trim().toLowerCase()}`;
 
 @Injectable()
 export class LivekitService {
