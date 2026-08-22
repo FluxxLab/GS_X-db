@@ -69,6 +69,15 @@ export class SessionsService {
       .getOne();
   }
 
+  /**
+   * Bulk lookup for surfaces that render many sessions' titles at once, such
+   * as cross-session comment moderation. One query instead of one per row.
+   */
+  findByIds(ids: string[]): Promise<Session[]> {
+    if (ids.length === 0) return Promise.resolve([]);
+    return this.sessions.find({ where: { id: In(ids) } });
+  }
+
   async findById(id: string): Promise<Session> {
     const session = await this.sessions.findOne({
       where: {
