@@ -575,13 +575,29 @@ export class DelegatesService {
       throw new BadRequestException('Message body cannot be empty');
     }
 
+    const pairKey = DelegatesService.pairKey(senderId, recipientId);
+
+    /**
+     * A reply may only quote a message from this same thread. Without this
+     * check a caller could pass any message id and have its text rendered
+     * inside a conversation it does not belong to - which leaks the contents of
+     * other people's DMs into a thread they can read.
+     */
+    if (dto.replyToId) {
+      const parent = await this.messages.findOneBy({ id: dto.replyToId });
+      if (!parent || parent.pairKey !== pairKey) {
+        throw new BadRequestException('Cannot reply to that message');
+      }
+    }
+
     const msg = await this.messages.save(
       this.messages.create({
-        pairKey: DelegatesService.pairKey(senderId, recipientId),
+        pairKey,
         senderId,
         recipientId,
         body,
         readAt: null,
+        replyToId: dto.replyToId ?? null,
       }),
     );
 
@@ -599,6 +615,7 @@ export class DelegatesService {
         recipientId,
         body,
         createdAt: msg.createdAt,
+        replyToId: msg.replyToId,
       },
     );
 
@@ -706,7 +723,41 @@ export class DelegatesService {
         .whereInIds(unreadIds)
         .execute();
     }
-    return rows;
+
+    // Attached rather than joined: a thread is read in one go, and one extra
+    // query beats a join that multiplies message rows by reaction rows.
+    const reactions = await this.reactionsFor(rows.map((m) => m.id));
+
+    /**
+     * Quoted text is resolved from the rows already loaded wherever possible.
+     * A reply's parent is nearly always in the same page of the thread, so this
+     * usually costs nothing; only a reply to something older needs a lookup.
+     */
+    const byId = new Map(rows.map((m) => [m.id, m]));
+    const missing = rows
+      .map((m) => m.replyToId)
+      .filter((rid): rid is string => !!rid && !byId.has(rid));
+    if (missing.length > 0) {
+      const older = await this.messages.findBy({ id: In(missing) });
+      for (const m of older) byId.set(m.id, m);
+    }
+
+    return rows.map((m) => {
+      const parent = m.replyToId ? byId.get(m.replyToId) : undefined;
+      return {
+        ...m,
+        reactions: reactions.get(m.id) ?? [],
+        // null when the parent was deleted - the reply still renders, just
+        // without a quote. That is why the FK is SET NULL, not CASCADE.
+        replyTo: parent
+          ? {
+              id: parent.id,
+              senderId: parent.senderId,
+              body: parent.body.slice(0, 140),
+            }
+          : null,
+      };
+    });
   }
 
   // Every thread the caller is part of, newest first: the other delegate, the
