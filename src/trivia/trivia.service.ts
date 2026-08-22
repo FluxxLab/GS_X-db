@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import Redis from 'ioredis';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { RealtimeService, Rooms } from '../common/realtime/realtime.service';
 import { REDIS } from '../common/redis/redis.module';
 import { AnswerTriviaDto } from './dto/answer-trivia.dto';
@@ -27,6 +27,21 @@ export interface DelegateQuestion {
   optionB: string;
   optionC: string;
   optionD: string;
+  playersCount: number;
+}
+
+export interface DelegateHistoryEntry {
+  id: string;
+  text: string;
+  optionA: string;
+  optionB: string;
+  optionC: string;
+  optionD: string;
+  chosenOption: TriviaOption | null; // null when the delegate never answered
+  correctOption: TriviaOption;
+  explanation: string | null;
+  correct: boolean | null; // null when unanswered - not the same as wrong
+  distribution: Record<TriviaOption, number>;
   playersCount: number;
 }
 
@@ -56,6 +71,58 @@ export class TriviaService {
       ...shape,
       playersCount: Object.values(distribution).reduce((a, b) => a + b, 0),
     };
+  }
+
+  /**
+   * A delegate's own trivia history: every closed question, with what they
+   * answered and what was correct.
+   *
+   * Questions they never answered are included on purpose - the reveal and the
+   * explanation are the point, and omitting them would make the list look like
+   * it had lost rows. `chosenOption` is null for those.
+   *
+   * Two bulk reads rather than a query per question: the whole summit is a
+   * handful of questions and this renders as one list.
+   */
+  async historyFor(delegateId: string): Promise<DelegateHistoryEntry[]> {
+    const closed = await this.questions.find({
+      where: { status: TriviaStatus.CLOSED },
+      order: { createdAt: 'DESC' },
+    });
+    if (closed.length === 0) return [];
+
+    const mine = await this.answers.find({
+      where: {
+        delegateId,
+        questionId: In(closed.map((q) => q.id)),
+      },
+    });
+    const byQuestion = new Map(mine.map((a) => [a.questionId, a.chosenOption]));
+
+    const distributions = await Promise.all(
+      closed.map((q) => this.distribution(q.id)),
+    );
+
+    return closed.map((q, index) => {
+      const chosenOption = byQuestion.get(q.id) ?? null;
+      const distribution = distributions[index];
+      return {
+        id: q.id,
+        text: q.text,
+        optionA: q.optionA,
+        optionB: q.optionB,
+        optionC: q.optionC,
+        optionD: q.optionD,
+        chosenOption,
+        correctOption: q.correctOption,
+        explanation: q.explanation ?? null,
+        // null (unanswered) is not the same as wrong, so it stays null
+        correct:
+          chosenOption === null ? null : chosenOption === q.correctOption,
+        distribution,
+        playersCount: Object.values(distribution).reduce((a, b) => a + b, 0),
+      };
+    });
   }
 
   async answer(delegateId: string, questionId: string, dto: AnswerTriviaDto) {

@@ -234,9 +234,23 @@ export class DelegatesService {
       d.interests = dto.interests;
     }
     if (dto.avatarUrl !== undefined) {
+      // stores the S3 key, not a URL - see StorageService.resolveAvatar
       d.avatarUrl = dto.avatarUrl;
     }
-    return this.delegateRepository.save(d);
+    const saved = await this.delegateRepository.save(d);
+    return this.withAvatar({ ...saved, avatarUrl: saved.avatarUrl ?? null });
+  }
+
+  /**
+   * The current delegate, ready to render.
+   *
+   * Deliberately separate from getProfile: that one returns the entity that
+   * updateProfile mutates and saves, so resolving the avatar there would write
+   * a presigned URL back into the column and it would expire in the database.
+   */
+  async profileView(id: string) {
+    const d = await this.getProfile(id);
+    return this.withAvatar({ ...d, avatarUrl: d.avatarUrl ?? null });
   }
 
   async exportCsv(): Promise<string> {
@@ -309,6 +323,21 @@ export class DelegatesService {
     }
     if (q.track) qb.andWhere(':track = ANY(d.tracks)', { track: q.track });
     return qb.orderBy('d.createdAt', 'DESC').take(500).getMany();
+  }
+
+  /**
+   * Swaps a stored avatar key for a signed, time-limited URL.
+   *
+   * Kept separate from toDirectoryView because that mapper is static (`this:
+   * void`) and signing needs the storage service. Signing is local HMAC, so
+   * doing it per row costs no network round trip.
+   */
+  private async withAvatar<T extends { avatarUrl: string | null }>(view: T): Promise<T> {
+    return { ...view, avatarUrl: await this.storage.resolveAvatar(view.avatarUrl) };
+  }
+
+  private withAvatars<T extends { avatarUrl: string | null }>(views: T[]): Promise<T[]> {
+    return Promise.all(views.map((v) => this.withAvatar(v)));
   }
 
   static toDirectoryView(this: void, d: Delegate): DelegateDirectoryDto {

@@ -8,7 +8,12 @@ import {
   Patch,
   Post,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+} from '@nestjs/swagger';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -32,6 +37,16 @@ export class TriviaController {
   })
   current() {
     return this.service.currentQuestion();
+  }
+
+  @Get('history')
+  @ApiOperation({
+    summary:
+      "A delegate's own closed questions, with their answer and the reveal",
+  })
+  @ApiResponse({ status: 200, description: 'Closed questions, newest first' })
+  history(@CurrentUser() user: AuthUser) {
+    return this.service.historyFor(user.id);
   }
 
   @Post(':id/answer')
