@@ -44,6 +44,16 @@ export class CaptionsService implements OnModuleDestroy {
    */
   private readonly pendingAudio = new Map<string, Buffer[]>();
 
+  /**
+   * The last few English finals per session, passed to the translator as
+   * context. Fragments are short and often start mid-thought - more so since
+   * finals are split at speaker changes - and without the preceding lines the
+   * model has to guess at pronouns and continuations, which is where most
+   * fluent-but-wrong output comes from.
+   */
+  private readonly recentFinals = new Map<string, string[]>();
+  private static readonly CONTEXT_LINES = 3;
+
   constructor(
     @InjectRepository(TranscriptSegment)
     private readonly segments: Repository<TranscriptSegment>,
@@ -175,16 +185,24 @@ export class CaptionsService implements OnModuleDestroy {
        * Deliberately not awaited: a slow translation must never delay the
        * English caption, which is the one on the screen in the room.
        */
-      void this.translateAndEmit(session.id, event.text);
+      // Captured before the current line is appended: the model needs what
+      // came before, not the fragment it is already being given.
+      const context = this.recentFinals.get(session.id) ?? [];
+      void this.translateAndEmit(session.id, event.text, context);
+      this.recentFinals.set(
+        session.id,
+        [...context, event.text].slice(-CaptionsService.CONTEXT_LINES),
+      );
     }
   }
 
   private async translateAndEmit(
     sessionId: string,
     text: string,
+    context: string[],
   ): Promise<void> {
     try {
-      const translations = await this.translate(text);
+      const translations = await this.translate(text, context);
       const at = new Date().toISOString();
 
       for (const [language, translated] of Object.entries(translations)) {
@@ -210,13 +228,25 @@ export class CaptionsService implements OnModuleDestroy {
     }
   }
 
-  private async translate(text: string): Promise<Translations> {
-    const key = `caption:tr:${createHash('sha1').update(text).digest('hex')}`;
+  private async translate(
+    text: string,
+    context: string[],
+  ): Promise<Translations> {
+    /**
+     * Context is part of the key: the same fragment translated after different
+     * preceding lines is a different translation, and serving a cached one
+     * from the wrong context is worse than paying for the call. Repeated
+     * stock phrases still hit, which is where most of the saving was anyway.
+     */
+    const hash = createHash('sha1');
+    for (const line of context) hash.update(line).update('|');
+    hash.update(text);
+    const key = `caption:tr:${hash.digest('hex')}`;
 
     const cached = await this.redis.get(key);
     if (cached) return JSON.parse(cached) as Translations;
 
-    const translations = await this.translation.translate(text);
+    const translations = await this.translation.translate(text, context);
     if (Object.keys(translations).length > 0) {
       // Sessions repeat terminology constantly - titles, names, recurring
       // phrases - so a day of captions hits this often enough to matter.
