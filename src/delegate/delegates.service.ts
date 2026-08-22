@@ -332,11 +332,18 @@ export class DelegatesService {
    * void`) and signing needs the storage service. Signing is local HMAC, so
    * doing it per row costs no network round trip.
    */
-  private async withAvatar<T extends { avatarUrl: string | null }>(view: T): Promise<T> {
-    return { ...view, avatarUrl: await this.storage.resolveAvatar(view.avatarUrl) };
+  private async withAvatar<T extends { avatarUrl: string | null }>(
+    view: T,
+  ): Promise<T> {
+    return {
+      ...view,
+      avatarUrl: await this.storage.resolveAvatar(view.avatarUrl),
+    };
   }
 
-  private withAvatars<T extends { avatarUrl: string | null }>(views: T[]): Promise<T[]> {
+  private withAvatars<T extends { avatarUrl: string | null }>(
+    views: T[],
+  ): Promise<T[]> {
     return Promise.all(views.map((v) => this.withAvatar(v)));
   }
 
