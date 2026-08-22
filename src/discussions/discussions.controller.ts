@@ -20,6 +20,7 @@ import {
 import { DiscussionService } from './discussions.service';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { QueryCommentsDto } from './dto/query-comments.dto';
+import { QueryAllCommentsDto } from './dto/query-all-comments.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthUser } from '../auth/strategies/jwt.stategies';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -55,6 +56,15 @@ export class DiscussionsController {
     @Query() query: QueryCommentsDto,
   ) {
     return this.service.listComments(sessionId, query);
+  }
+
+  @Get('comments')
+  @Roles(AccessTier.ADMIN)
+  @ApiOperation({
+    summary: 'Forums: every thread across all sessions, for moderation',
+  })
+  listAll(@Query() query: QueryAllCommentsDto) {
+    return this.service.listAllComments(query);
   }
 
   @Post('comments/:id/flag')
