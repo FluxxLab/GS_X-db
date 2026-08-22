@@ -6,7 +6,12 @@ import { QuerySessionsDto } from './dto/query-sessions.dto';
 import { UpdateSessionDto } from './dto/update-session.dto';
 import { SessionBookmark } from './entities/bookmark.entity';
 import { SessionAttendance } from './entities/attendance.entity';
-import { Session, SessionStatus } from './entities/session.entity';
+import {
+  Session,
+  SessionStatus,
+  SessionTrack,
+  TRACK_LABELS,
+} from './entities/session.entity';
 import { Speaker } from './entities/speaker.entity';
 import { RealtimeService, Rooms } from 'src/common/realtime/realtime.service';
 
@@ -27,6 +32,18 @@ export class SessionsService {
 
     private readonly realtime: RealtimeService,
   ) {}
+
+  /**
+   * Derived from the enum rather than written out again, so this can never
+   * disagree with what the column accepts. Labels are here too: every client
+   * was otherwise inventing its own capitalisation of the same seven values.
+   */
+  tracks(): { value: SessionTrack; label: string }[] {
+    return Object.values(SessionTrack).map((value) => ({
+      value,
+      label: TRACK_LABELS[value],
+    }));
+  }
 
   list(query: QuerySessionsDto) {
     return this.sessions.find({

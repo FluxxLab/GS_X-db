@@ -20,6 +20,20 @@ export enum SessionTrack {
   YOUTH = 'youth',
 }
 
+/**
+ * Display names for the tracks. Lives beside the enum so adding a track is one
+ * edit plus a migration, and every client picks up the label from the API.
+ */
+export const TRACK_LABELS: Record<SessionTrack, string> = {
+  [SessionTrack.PLENARY]: 'Plenary',
+  [SessionTrack.GBV]: 'Gender-Based Violence',
+  [SessionTrack.HEALTH]: 'Health',
+  [SessionTrack.ECONOMIC]: 'Economic Empowerment',
+  [SessionTrack.INNOVATION]: 'Innovation',
+  [SessionTrack.DIGITAL]: 'Digital Inclusion',
+  [SessionTrack.YOUTH]: 'Youth',
+};
+
 export enum SessionStatus {
   SCHEDULED = 'scheduled',
   LIVE = 'live',
