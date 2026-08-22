@@ -50,6 +50,24 @@ export class SessionController {
     return this.service.savedSessions(user.id);
   }
 
+  /**
+   * The single source of truth for tracks.
+   *
+   * Declared before :id so the router does not try to parse "tracks" as a
+   * UUID. Public because every client needs it before a delegate has logged
+   * in, and because a hardcoded copy in each app is how the three of them
+   * drifted apart - the database enum rejects anything not listed here, so a
+   * client-side list that disagrees produces a 400 nobody can explain.
+   */
+  @Public()
+  @Get('tracks')
+  @ApiOperation({
+    summary: 'Session tracks, as the database enum defines them',
+  })
+  tracks() {
+    return this.service.tracks();
+  }
+
   @Public()
   @Get(':id')
   @ApiOperation({})
