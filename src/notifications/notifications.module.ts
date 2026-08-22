@@ -14,12 +14,32 @@ import { PUSH_SENDER } from './push/push-sender.interface';
 import { EMAIL_SENDER } from './email/email-sender.interface';
 import { LogEmailSender } from './email/log-email.sender';
 import { SmtpEmailSender } from './email/smtp-email.sender';
+import { ZeptoEmailSender } from './email/zepto-email.sender';
 import { SMS_SENDER } from './sms/sms-sender.interface';
 import { LogSmsSender } from './sms/log-sms.sender';
 import { TermiiSmsSender } from './sms/termii-sms.sender';
 import { NotificationsGateway } from './notifications.gateway';
 
 const logger = new Logger('NotificationsModule');
+
+/**
+ * ZeptoMail needs a token and a verified sender address. Warns rather than
+ * failing quietly when the token is set but the address is not: a half
+ * configured provider that silently falls back to logging is how OTP emails
+ * stop arriving without anyone noticing.
+ */
+function hasZeptoMail(config: ConfigService): boolean {
+  const token = config.get('ZEPTOMAIL_TOKEN');
+  if (!token) return false;
+
+  if (!config.get('ZEPTOMAIL_FROM_ADDRESS')) {
+    logger.warn(
+      'ZEPTOMAIL_TOKEN set but ZEPTOMAIL_FROM_ADDRESS is missing. Falling back.',
+    );
+    return false;
+  }
+  return true;
+}
 
 function hasAllSmtp(config: ConfigService): boolean {
   const required = [
@@ -78,7 +98,13 @@ function hasAllTermii(config: ConfigService): boolean {
       provide: EMAIL_SENDER,
       inject: [ConfigService],
       useFactory: (config: ConfigService) =>
-        hasAllSmtp(config) ? new SmtpEmailSender(config) : new LogEmailSender(),
+        // ZeptoMail first, SMTP as the fallback for anyone still on it, and
+        // LogEmailSender last so local development needs no credentials.
+        hasZeptoMail(config)
+          ? new ZeptoEmailSender(config)
+          : hasAllSmtp(config)
+            ? new SmtpEmailSender(config)
+            : new LogEmailSender(),
     },
     {
       provide: SMS_SENDER,

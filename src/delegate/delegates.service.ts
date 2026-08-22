@@ -22,6 +22,7 @@ import { DelegateDirectoryDto } from './dto/delegate-directory.dto';
 import { ListDirectoryDto } from './dto/list-directory.dto';
 import { DelegateConnection } from './entities/delegate-connection.entity';
 import { DirectMessage } from './entities/direct-message.entity';
+import { MessageReaction } from './entities/message-reaction.entity';
 import { SendDirectMessageDto } from './dto/send-direct-message.dto';
 import { RealtimeService, Rooms } from '../common/realtime/realtime.service';
 import { StorageService } from '../common/storage/storage.service';
@@ -39,6 +40,8 @@ export class DelegatesService {
     private readonly connections: Repository<DelegateConnection>,
     @InjectRepository(DirectMessage)
     private readonly messages: Repository<DirectMessage>,
+    @InjectRepository(MessageReaction)
+    private readonly reactions: Repository<MessageReaction>,
     private readonly realtime: RealtimeService,
     private readonly storage: StorageService,
     private readonly dataSource: DataSource,
@@ -603,6 +606,79 @@ export class DelegatesService {
       `DM sent ${senderId.slice(0, 8)}… → ${recipientId.slice(0, 8)}… (len=${body.length})`,
     );
     return msg;
+  }
+
+  /**
+   * Adds, changes or clears the caller's reaction on one message.
+   *
+   * Only the two people in the thread may react - checked against the message's
+   * own sender/recipient rather than a connection lookup, so a reaction can
+   * never be attached to a conversation the caller is not part of.
+   *
+   * The emitted event carries the whole reaction set for the message, not a
+   * delta. Deltas would need the client to hold a correct prior state, and a
+   * client that missed one event while backgrounded would stay wrong forever.
+   */
+  async reactToMessage(
+    callerId: string,
+    messageId: string,
+    emoji: string | null,
+  ) {
+    const message = await this.messages.findOneBy({ id: messageId });
+    if (!message) throw new NotFoundException('Message not found');
+    if (message.senderId !== callerId && message.recipientId !== callerId) {
+      throw new NotFoundException('Message not found');
+    }
+
+    if (emoji === null) {
+      await this.reactions.delete({ messageId, delegateId: callerId });
+    } else {
+      const existing = await this.reactions.findOneBy({
+        messageId,
+        delegateId: callerId,
+      });
+      if (existing) {
+        await this.reactions.update({ id: existing.id }, { emoji });
+      } else {
+        await this.reactions.insert({ messageId, delegateId: callerId, emoji });
+      }
+    }
+
+    const reactions = await this.reactionsFor([messageId]);
+    const payload = {
+      messageId,
+      reactions: reactions.get(messageId) ?? [],
+    };
+    this.realtime.emitToRoom(
+      [
+        Rooms.dm(message.pairKey),
+        Rooms.network(
+          message.senderId === callerId
+            ? message.recipientId
+            : message.senderId,
+        ),
+      ],
+      'dm:reaction',
+      payload,
+    );
+    return payload;
+  }
+
+  /** Reactions grouped by message, in one query rather than one per message. */
+  private async reactionsFor(
+    messageIds: string[],
+  ): Promise<Map<string, { delegateId: string; emoji: string }[]>> {
+    const map = new Map<string, { delegateId: string; emoji: string }[]>();
+    if (messageIds.length === 0) return map;
+    const rows = await this.reactions.find({
+      where: { messageId: In(messageIds) },
+    });
+    for (const r of rows) {
+      const list = map.get(r.messageId) ?? [];
+      list.push({ delegateId: r.delegateId, emoji: r.emoji });
+      map.set(r.messageId, list);
+    }
+    return map;
   }
 
   async listThread(

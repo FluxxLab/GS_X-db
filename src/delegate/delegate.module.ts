@@ -8,6 +8,7 @@ import { RegistrationEntry } from './entities/registration-entry.entity';
 import { DelegatesController } from './delegates.controller';
 import { DelegateConnection } from './entities/delegate-connection.entity';
 import { DirectMessage } from './entities/direct-message.entity';
+import { MessageReaction } from './entities/message-reaction.entity';
 import { RealtimeModule } from '../common/realtime/realtime.module';
 
 @Module({
@@ -17,6 +18,7 @@ import { RealtimeModule } from '../common/realtime/realtime.module';
       RegistrationEntry,
       DelegateConnection,
       DirectMessage,
+      MessageReaction,
     ]),
     RealtimeModule,
   ],

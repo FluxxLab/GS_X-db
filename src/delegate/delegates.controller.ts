@@ -16,6 +16,7 @@ import {
   ApiOperation,
   ApiBearerAuth,
   ApiResponse,
+  ApiParam,
 } from '@nestjs/swagger';
 import { DelegatesService } from './delegates.service';
 import { Audit } from '../common/decorators/audit.decorator';
@@ -37,6 +38,7 @@ import { SetAdminDto } from './entities/set-admin.dto';
 import { DelegateDirectoryDto } from './dto/delegate-directory.dto';
 import { ListDirectoryDto } from './dto/list-directory.dto';
 import { SendDirectMessageDto } from './dto/send-direct-message.dto';
+import { ReactMessageDto } from './dto/react-message.dto';
 import { AvatarUploadDto } from './dto/avatar-upload.dto';
 import { DeleteAccountDto } from './dto/delete-account.dto';
 
@@ -300,6 +302,22 @@ export class DelegatesController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.service.listThread(user.id, otherDelegateId);
+  }
+
+  @Post('messages/:messageId/react')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'React to a direct message, or clear your reaction with null',
+  })
+  @ApiParam({ name: 'messageId', description: 'Message ID', type: String })
+  @ApiResponse({ status: 200, description: 'The message id and its reactions' })
+  @ApiResponse({ status: 404, description: 'Message not in your threads' })
+  reactToMessage(
+    @Param('messageId', new ParseUUIDPipe()) messageId: string,
+    @Body() dto: ReactMessageDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.service.reactToMessage(user.id, messageId, dto.emoji);
   }
 
   // Declared last so every static path above ('directory', 'me', 'export',
