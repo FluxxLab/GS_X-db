@@ -10,14 +10,19 @@ import {
 } from 'typeorm';
 import { Speaker } from './speaker.entity';
 
+/**
+ * The summit's five thematic tracks, confirmed 22 Aug 2026.
+ *
+ * Replaced an earlier seven that included plenary, innovation and youth.
+ * These values are the Postgres enum for both sessions and pitch entries, so
+ * adding or removing one is a migration, not an edit here.
+ */
 export enum SessionTrack {
-  PLENARY = 'plenary',
+  DIGITAL = 'digital',
+  ECONOMIC = 'economic',
   GBV = 'gbv',
   HEALTH = 'health',
-  ECONOMIC = 'economic',
-  INNOVATION = 'innovation',
-  DIGITAL = 'digital',
-  YOUTH = 'youth',
+  SECURITY = 'security',
 }
 
 /**
@@ -25,13 +30,11 @@ export enum SessionTrack {
  * edit plus a migration, and every client picks up the label from the API.
  */
 export const TRACK_LABELS: Record<SessionTrack, string> = {
-  [SessionTrack.PLENARY]: 'Plenary',
-  [SessionTrack.GBV]: 'Gender-Based Violence',
-  [SessionTrack.HEALTH]: 'Health',
-  [SessionTrack.ECONOMIC]: 'Economic Empowerment',
-  [SessionTrack.INNOVATION]: 'Innovation',
-  [SessionTrack.DIGITAL]: 'Digital Inclusion',
-  [SessionTrack.YOUTH]: 'Youth',
+  [SessionTrack.DIGITAL]: 'Inclusive Digital Transformation',
+  [SessionTrack.ECONOMIC]: 'Economic Inclusion',
+  [SessionTrack.GBV]: 'Gender-Based Violence (GBV)',
+  [SessionTrack.HEALTH]: 'Health & Nutrition',
+  [SessionTrack.SECURITY]: 'Security & Transportation',
 };
 
 export enum SessionStatus {
