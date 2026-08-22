@@ -1,6 +1,6 @@
 import { In, Repository } from 'typeorm';
 import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Inject } from '@nestjs/common';
+import { Inject, Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { RealtimeService, Rooms } from 'src/common/realtime/realtime.service';
 import { DelegatesService } from 'src/delegate/delegates.service';
@@ -12,6 +12,8 @@ import type { PushSender } from './push/push-sender.interface';
 
 @Processor('notifications')
 export class NotificationsProcessor extends WorkerHost {
+  private readonly logger = new Logger(NotificationsProcessor.name);
+
   constructor(
     private readonly realtime: RealtimeService,
     private readonly delegate: DelegatesService,
@@ -45,6 +47,23 @@ export class NotificationsProcessor extends WorkerHost {
           (t) => t.token,
         )
       : [];
+
+    /**
+     * Delivering to nobody is otherwise indistinguishable from success: the
+     * row still gets stamped sent, the admin sees a green tick, and no device
+     * ever rings. A segment with delegates but no registered tokens means the
+     * app never called POST /notifications/register - Expo Go, the Settings
+     * push toggle, or a denied permission.
+     */
+    if (delegateIds.length > 0 && tokens.length === 0) {
+      this.logger.warn(
+        `"${notification.title}" reached 0 devices: ${delegateIds.length} delegate(s) in segment "${notification.segment}", none with a registered push token`,
+      );
+    } else {
+      this.logger.log(
+        `"${notification.title}" -> ${tokens.length} device(s) in segment "${notification.segment}"`,
+      );
+    }
 
     const { invalidTokens } = await this.push.sendToTokens(
       tokens,
