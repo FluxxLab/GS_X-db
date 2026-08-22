@@ -85,7 +85,7 @@ export class DeepTranscriptionProvider implements TranscriptionProvider {
   }
 
   async openStream(
-    opts: { room: string; keywords: string[] },
+    opts: { room: string; keywords: string[]; diarise?: boolean },
     onTranscript: (event: TranscriptEvent) => void,
   ): Promise<TranscriptionStream> {
     const conn = await this.client.listen.v1.connect({
@@ -95,8 +95,23 @@ export class DeepTranscriptionProvider implements TranscriptionProvider {
       interim_results: 'true',
       keyterm: opts.keywords,
       // v1 is the only diarisation model streaming accepts; v2 is batch-only
-      // and returns a validation error here.
-      diarize_model: 'v1',
+      // and returns a validation error here. Omitted entirely for a
+      // single-voice room rather than set false, so no speaker field comes
+      // back at all and the UI renders unlabelled lines.
+      ...(opts.diarise === false ? {} : { diarize_model: 'v1' }),
+      /**
+       * Deepgram's default endpointing is 10ms, which finalises on the
+       * shortest pause and produces fragments that end mid-phrase. That hurts
+       * diarisation more than anything else available here: the fewer words in
+       * a final, the less evidence the diariser has to attribute them, so
+       * short turns get swept into whoever was speaking before.
+       *
+       * 400ms waits for a real breath instead of a syllable gap. Captions
+       * appear a fraction later; turns are whole and attribution is steadier.
+       */
+      endpointing: '400',
+      utterance_end_ms: '1200',
+      vad_events: 'true',
     });
 
     /**

@@ -126,7 +126,7 @@ export class DelegatesService {
       this.delegateRepository.countBy({ accessTier: AccessTier.VIP }),
       this.delegateRepository.countBy({ accessTier: AccessTier.VVIP }),
       this.delegateRepository.countBy({ flagged: true }),
-      this.delegateRepository.countBy({ flagged: true }),
+      this.delegateRepository.countBy({ accessTier: AccessTier.PRESS }),
     ]);
     return { total, vip, vvip, press, flagged };
   }

@@ -60,12 +60,17 @@ export class CaptionsGateway {
   @SubscribeMessage('capture:start')
   async startCapture(
     @ConnectedSocket() socket: Socket,
-    @MessageBody() room: string,
+    @MessageBody() body: string | { room: string; diarise?: boolean },
   ) {
     if (socket.data.user?.role !== 'admin') return { error: 'forbidden' };
-    await this.captionsService.startRoom(room);
+
+    // Older capture pages send a bare room string, which means diarise.
+    const room = typeof body === 'string' ? body : body.room;
+    const diarise = typeof body === 'string' ? true : body.diarise !== false;
+
+    await this.captionsService.startRoom(room, diarise);
     socket.data.captureRoom = room; //subsequent audio from this socket belong to this room
-    return { capturing: room };
+    return { capturing: room, diarise };
   }
 
   @SubscribeMessage('capture:audio')
