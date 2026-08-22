@@ -19,24 +19,22 @@ const DO_NOT_TRANSLATE = ['Pitchathon', 'GBV', 'GS-26'];
 const SYSTEM_PROMPT = [
   'You translate live conference captions for the GS-26 Gender & Inclusion Summit in Nigeria.',
   '',
+  'What you receive:',
+  '- Optionally, the preceding lines of transcript, marked as context. They are there so pronouns, continuations and half-finished thoughts make sense. Never translate them.',
+  '- One fragment to translate. It is a slice of continuous speech: it may begin mid-sentence, end mid-sentence, or be a single interjection.',
+  '',
   'Rules:',
-  '- Translate the English caption into Hausa, Igbo, Yoruba and Nigerian Pidgin.',
-  '- Captions are fragments of continuous speech. Translate what is there. Never add, explain, or finish a half-spoken sentence.',
-  '- Match the register of the original. This is policy and advocacy discussion, not casual conversation, but Nigerian Pidgin should read as natural spoken Pidgin rather than transliterated English.',
+  '- Translate the fragment into Hausa, Igbo, Yoruba and Nigerian Pidgin.',
+  '- Translate only the fragment, and only what it says. Do not finish a half-spoken sentence, do not pull words in from the context, and do not add clarification the speaker did not give.',
+  '- Keep a fragment a fragment. If it starts mid-sentence the translation should too; do not add an opening capital or a closing full stop the speaker has not reached.',
+  '- Use correct orthography, including diacritics: Yoruba tone marks and sub-dots, Igbo dotted vowels, Hausa hooked letters. Stripping them is wrong, not a simplification.',
+  '- Match the register. This is policy and advocacy discussion; Hausa, Igbo and Yoruba should read as the formal spoken language a broadcaster would use.',
+  '- Nigerian Pidgin must read as natural spoken Pidgin, not English with a few words swapped. If your Pidgin line could pass for the English one, rework it.',
+  '- Gender and inclusion vocabulary is the subject matter, not incidental. Use the established term in each language rather than a literal calque.',
   `- Leave these terms exactly as written: ${DO_NOT_TRANSLATE.join(', ')}.`,
   '- Keep names of people and organisations in their original form.',
-  '- If a fragment carries nothing translatable, return it unchanged.',
+  '- If a fragment carries nothing translatable - a filler, a stray syllable - return it unchanged.',
 ].join('\n');
-
-/**
- * `output_config.effort` is only valid on the Opus/Sonnet-5 tier. Haiku 4.5 and
- * Sonnet 4.5 reject it outright (400), so it has to be omitted rather than
- * hardcoded - otherwise switching ANTHROPIC_MODEL to Haiku fails every call.
- * Those models also do not think unless explicitly asked, which is what we want
- * here anyway: no thinking tokens, no thinking latency.
- */
-const supportsEffort = (model: string): boolean =>
-  !/haiku|sonnet-4-5/i.test(model);
 
 const TranslationSchema = z.object({
   ha: z.string(),
@@ -50,7 +48,6 @@ export class ClaudeTranslationProvider implements TranslationProvider {
   private readonly logger = new Logger(ClaudeTranslationProvider.name);
   private readonly client: Anthropic;
   private readonly model: string;
-  private readonly effort?: 'low';
 
   constructor(config: ConfigService) {
     this.client = new Anthropic({
@@ -63,17 +60,29 @@ export class ClaudeTranslationProvider implements TranslationProvider {
       timeout: 5_000,
       maxRetries: 1,
     });
-    /**
-     * Haiku 4.5 by default: translating a one-sentence fragment is not a
-     * reasoning task, and this is the latency a delegate reads through. Set
-     * ANTHROPIC_MODEL=claude-opus-5 to trade cost back for quality - the
-     * effort guard below keeps either choice a config change, not a code one.
-     */
-    this.model = config.get<string>('ANTHROPIC_MODEL') ?? 'claude-haiku-4-5';
-    this.effort = supportsEffort(this.model) ? 'low' : undefined;
+    this.model = config.get<string>('ANTHROPIC_MODEL') ?? 'claude-opus-5';
   }
 
-  async translate(text: string): Promise<Translations> {
+  async translate(text: string, context: string[] = []): Promise<Translations> {
+    /**
+     * Fragments are short and often start mid-thought, and splitting finals at
+     * speaker changes made them shorter still. Without the preceding lines the
+     * model has to guess at pronouns, continuations and subject matter, which
+     * is where most of the wrong-but-fluent output comes from. The context sits
+     * in the user message, outside the cached prefix, because it changes every
+     * call.
+     */
+    const prompt =
+      context.length > 0
+        ? [
+            'Context (already spoken, do not translate):',
+            ...context,
+            '',
+            'Fragment to translate:',
+            text,
+          ].join('\n')
+        : text;
+
     const response = await this.client.messages.parse({
       model: this.model,
       max_tokens: 2048,
@@ -89,17 +98,15 @@ export class ClaudeTranslationProvider implements TranslationProvider {
         },
       ],
       /**
-       * On Haiku no `thinking` block is sent, so the model does not think at
-       * all - the cheapest possible latency for a task that needs none. On the
-       * Opus/Sonnet-5 tier thinking is on by default, so effort is dialled to
-       * 'low' rather than disabled outright: disabling it on Opus can leak
-       * reasoning into the visible answer.
+       * Translating one fragment is not a reasoning task, and every thinking
+       * token is latency a delegate feels. Low effort rather than thinking
+       * disabled: disabling it on Opus can leak reasoning into the answer.
        */
       output_config: {
         format: zodOutputFormat(TranslationSchema),
-        ...(this.effort ? { effort: this.effort } : {}),
+        effort: 'low',
       },
-      messages: [{ role: 'user', content: text }],
+      messages: [{ role: 'user', content: prompt }],
     });
 
     const parsed = response.parsed_output;

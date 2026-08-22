@@ -11,5 +11,5 @@ export interface TranslationProvider {
    * per-request overhead dominates, and one call keeps the four translations
    * consistent with each other.
    */
-  translate(text: string): Promise<Translations>;
+  translate(text: string, context?: string[]): Promise<Translations>;
 }
