@@ -91,6 +91,35 @@ export class DelegatesService {
     return (await qb.getMany()).map((d) => d.id);
   }
 
+  /**
+   * Which segments this delegate belongs to - the inverse of idsForSegment,
+   * and deliberately next to it so the two cannot drift. The notification
+   * inbox uses this so that what a delegate can read back always matches what
+   * they were actually sent.
+   */
+  async segmentsFor(delegateId: string): Promise<AudienceSegment[]> {
+    const segments = [AudienceSegment.ALL];
+
+    const delegate = await this.delegateRepository.findOne({
+      where: { id: delegateId },
+    });
+    if (!delegate) return segments;
+
+    if (
+      delegate.accessTier === AccessTier.VIP ||
+      delegate.accessTier === AccessTier.VVIP
+    )
+      segments.push(AudienceSegment.VIP);
+    if (delegate.accessTier === AccessTier.PRESS)
+      segments.push(AudienceSegment.PRESS);
+    if (delegate.tags?.includes('speaker'))
+      segments.push(AudienceSegment.SPEAKERS);
+    if (delegate.tags?.includes('volunteer'))
+      segments.push(AudienceSegment.VOLUNTEERS);
+
+    return segments;
+  }
+
   async segmentStats() {
     const [total, vip, vvip, flagged, press] = await Promise.all([
       this.delegateRepository.count(),
