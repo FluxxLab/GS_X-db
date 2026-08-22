@@ -1,6 +1,10 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'crypto';
 
@@ -78,12 +82,32 @@ export class StorageService {
    * a data migration. Returns null rather than throwing - a broken avatar must
    * never take down a profile or a directory page.
    */
-  async resolveAvatar(stored: string | null | undefined): Promise<string | null> {
+  async resolveAvatar(
+    stored: string | null | undefined,
+  ): Promise<string | null> {
     if (!stored) return null;
-    if (stored.startsWith('http://') || stored.startsWith('https://')) return stored;
+
+    /**
+     * A URL pointing at our own bucket has to be turned back into a key and
+     * signed, not passed through. Older clients saved the public URL this
+     * service used to hand out, and with Block Public Access on that URL 403s
+     * forever - so trusting "it starts with https" would leave every avatar
+     * uploaded before the switch permanently broken, with no error anywhere.
+     */
+    const ownPrefix = this.bucket
+      ? `https://${this.bucket}.s3.${this.region}.amazonaws.com/`
+      : null;
+    const key =
+      ownPrefix && stored.startsWith(ownPrefix)
+        ? stored.slice(ownPrefix.length)
+        : stored.startsWith('http://') || stored.startsWith('https://')
+          ? null // genuinely external - leave it alone
+          : stored;
+
+    if (key === null) return stored;
     if (!this.bucket) return null;
     try {
-      return await this.presignRead(stored);
+      return await this.presignRead(key);
     } catch {
       return null;
     }
