@@ -19,7 +19,13 @@ export interface TranscriptionStream {
 
 export interface TranscriptionProvider {
   openStream(
-    opts: { room: string; keywords: string[] },
+    /**
+     * diarise=false for a single-voice room. Streaming diarisation splits one
+     * speaker into several when the voice varies - distance from the mic,
+     * volume, laughter - and a false "Speaker 2" mid-monologue reads worse
+     * than no labels at all.
+     */
+    opts: { room: string; keywords: string[]; diarise?: boolean },
     onTranscript: (event: TranscriptEvent) => void,
   ): Promise<TranscriptionStream>;
 }

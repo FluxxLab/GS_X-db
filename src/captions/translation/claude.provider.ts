@@ -8,14 +8,13 @@ import type {
   TranslationProvider,
   Translations,
 } from './translation.interface';
+import { DO_NOT_TRANSLATE, exampleLines, glossaryLines } from './glossary';
 
 /**
- * Terms that must survive untranslated. Same list the transcription provider
- * hands Deepgram as keyterms, for the same reason: these are the words a
- * general-purpose model is most likely to mangle.
+ * Built once at module load. The glossary and worked examples are static
+ * native-speaker input, so they belong inside the cached prefix: filling them
+ * in costs roughly a tenth of normal input tokens per caption, not full price.
  */
-const DO_NOT_TRANSLATE = ['Pitchathon', 'GBV', 'GS-26'];
-
 const SYSTEM_PROMPT = [
   'You translate live conference captions for the GS-26 Gender & Inclusion Summit in Nigeria.',
   '',
@@ -34,6 +33,8 @@ const SYSTEM_PROMPT = [
   `- Leave these terms exactly as written: ${DO_NOT_TRANSLATE.join(', ')}.`,
   '- Keep names of people and organisations in their original form.',
   '- If a fragment carries nothing translatable - a filler, a stray syllable - return it unchanged.',
+  ...glossaryLines(),
+  ...exampleLines(),
 ].join('\n');
 
 const TranslationSchema = z.object({

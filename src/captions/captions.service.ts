@@ -67,7 +67,7 @@ export class CaptionsService implements OnModuleDestroy {
     private readonly redis: Redis,
   ) {}
 
-  async startRoom(room: string): Promise<void> {
+  async startRoom(room: string, diarise = true): Promise<void> {
     // indempotent - capture page reconnect happen
     if (this.activeRooms.has(room) || this.pendingAudio.has(room)) return;
 
@@ -75,7 +75,7 @@ export class CaptionsService implements OnModuleDestroy {
     let stream: TranscriptionStream;
     try {
       stream = await this.transcription.openStream(
-        { room, keywords: SUMMIT_KEYWORDS },
+        { room, keywords: SUMMIT_KEYWORDS, diarise },
         (event) =>
           void this.onTranscript(room, event).catch((error) =>
             /**
@@ -188,7 +188,12 @@ export class CaptionsService implements OnModuleDestroy {
       // Captured before the current line is appended: the model needs what
       // came before, not the fragment it is already being given.
       const context = this.recentFinals.get(session.id) ?? [];
-      void this.translateAndEmit(session.id, event.text, context);
+      void this.translateAndEmit(
+        session.id,
+        event.text,
+        context,
+        event.speaker,
+      );
       this.recentFinals.set(
         session.id,
         [...context, event.text].slice(-CaptionsService.CONTEXT_LINES),
@@ -200,6 +205,7 @@ export class CaptionsService implements OnModuleDestroy {
     sessionId: string,
     text: string,
     context: string[],
+    speaker: number | undefined,
   ): Promise<void> {
     try {
       const translations = await this.translate(text, context);
@@ -216,6 +222,13 @@ export class CaptionsService implements OnModuleDestroy {
             isFinal: true,
             aiGenerated: true,
             language,
+            /**
+             * Carried through from the English final. A delegate reading in
+             * Yoruba needs to know who is speaking just as much as one
+             * reading English, and the label is rendered by the client, so it
+             * never goes through the translator.
+             */
+            speaker,
             at,
           },
         );
