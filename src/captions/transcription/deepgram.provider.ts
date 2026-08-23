@@ -1,7 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DeepgramClient } from '@deepgram/sdk';
+import { createReadStream } from 'node:fs';
 import type {
+  ArchiveUtterance,
   TranscriptEvent,
   TranscriptionProvider,
   TranscriptionStream,
@@ -82,6 +84,41 @@ export class DeepTranscriptionProvider implements TranscriptionProvider {
     this.client = new DeepgramClient({
       apiKey: config.getOrThrow<string>('DEEPGRAM_API_KEY'),
     });
+  }
+
+  /**
+   * The archive pass. diarize_model v2 is batch-only - streaming rejects it -
+   * and it is the reason this exists: v2 reads the whole recording before
+   * deciding who spoke, instead of guessing incrementally as the audio
+   * arrives. utterances gives speaker-segmented turns directly, so there is
+   * no word-run stitching to do here.
+   */
+  async archive(
+    filePath: string,
+    opts: { keywords: string[] },
+  ): Promise<ArchiveUtterance[]> {
+    const response = await this.client.listen.v1.media.transcribeFile(
+      createReadStream(filePath),
+      {
+        model: 'nova-3',
+        language: 'en',
+        smart_format: true,
+        diarize_model: 'v2',
+        utterances: true,
+        keyterm: opts.keywords,
+      },
+    );
+
+    const utterances =
+      'results' in response ? (response.results.utterances ?? []) : [];
+
+    return utterances
+      .filter((u) => u.transcript && u.transcript.trim().length > 0)
+      .map((u) => ({
+        text: u.transcript as string,
+        speaker: u.speaker,
+        offsetMs: Math.round((u.start ?? 0) * 1000),
+      }));
   }
 
   async openStream(

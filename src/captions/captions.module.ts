@@ -1,9 +1,11 @@
 import { Module } from '@nestjs/common';
+import { BullModule } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { SessionsModule } from '../sessions/sessions.module';
 import { CaptionsController } from './captions.controller';
 import { CaptionsGateway } from './captions.gateway';
+import { CaptionsArchiveProcessor } from './captions-archive.processor';
 import { CaptionsService } from './captions.service';
 import { LivekitService } from './livekit.service';
 import { TranscriptSegment } from './entities/transcript-segment.entity';
@@ -15,11 +17,17 @@ import { NoopTranslationProvider } from './translation/noop.provider';
 import { TRANSLATION_PROVIDER } from './translation/translation.interface';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([TranscriptSegment]), SessionsModule],
+  imports: [
+    TypeOrmModule.forFeature([TranscriptSegment]),
+    SessionsModule,
+    // Re-transcription runs for minutes; it cannot sit on the socket handler.
+    BullModule.registerQueue({ name: 'captions-archive' }),
+  ],
   controllers: [CaptionsController],
   providers: [
     CaptionsService,
     CaptionsGateway,
+    CaptionsArchiveProcessor,
     LivekitService,
     {
       provide: TRANSCRIPTION_PROVIDER,

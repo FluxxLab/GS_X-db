@@ -12,7 +12,13 @@ import type {
 } from './transcription/transcription.interface';
 import { REDIS } from 'src/common/redis/redis.module';
 import { Redis } from 'ioredis';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { createWriteStream, type WriteStream } from 'node:fs';
+import { unlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { CaptionLanguage } from './translation/languages';
 import { TRANSLATION_PROVIDER } from './translation/translation.interface';
 import type {
@@ -52,6 +58,23 @@ export class CaptionsService implements OnModuleDestroy {
    * fluent-but-wrong output comes from.
    */
   private readonly recentFinals = new Map<string, string[]>();
+
+  /**
+   * A copy of the room's audio on disk, kept only until the archive pass has
+   * read it. Written alongside the Deepgram stream rather than instead of it:
+   * the live captions still have to arrive in real time.
+   */
+  private readonly recordings = new Map<
+    string,
+    { path: string; file: WriteStream }
+  >();
+
+  /**
+   * The session each room was last captioning. Read at stop time, because by
+   * then an operator has usually already marked the session completed and
+   * findLiveInRoom would return nothing.
+   */
+  private readonly lastSession = new Map<string, string>();
   private static readonly CONTEXT_LINES = 3;
 
   constructor(
@@ -61,6 +84,8 @@ export class CaptionsService implements OnModuleDestroy {
     private readonly transcription: TranscriptionProvider,
     @Inject(TRANSLATION_PROVIDER)
     private readonly translation: TranslationProvider,
+    @InjectQueue('captions-archive')
+    private readonly archiveQueue: Queue,
     private readonly session: SessionsService,
     private readonly realtime: RealtimeService,
     @Inject(REDIS)
@@ -95,6 +120,10 @@ export class CaptionsService implements OnModuleDestroy {
     }
     this.activeRooms.set(room, stream);
 
+    // Same bytes the live stream gets, kept for the higher-quality pass later.
+    const path = join(tmpdir(), 'gs26-capture-' + randomUUID() + '.webm');
+    this.recordings.set(room, { path, file: createWriteStream(path) });
+
     const queued = this.pendingAudio.get(room) ?? [];
     this.pendingAudio.delete(room);
     for (const chunk of queued) this.sendAudio(room, chunk);
@@ -117,6 +146,9 @@ export class CaptionsService implements OnModuleDestroy {
     const stream = this.activeRooms.get(room);
     if (!stream) return;
 
+    // Written before the send, so a Deepgram failure cannot cost us the audio.
+    this.recordings.get(room)?.file.write(chunk);
+
     try {
       stream.sendAudio(chunk);
     } catch (error) {
@@ -137,6 +169,46 @@ export class CaptionsService implements OnModuleDestroy {
     await this.activeRooms.get(room)?.close();
     await this.redis.del(this.captureKey(room));
     this.activeRooms.delete(room);
+
+    await this.queueArchive(room);
+  }
+
+  /**
+   * Hand the finished recording to the archive pass.
+   *
+   * Queued rather than awaited: re-transcribing an hour of audio takes
+   * minutes, and caption:stop is a socket handler an operator is waiting on.
+   * Nothing here is allowed to throw - the live transcript already exists,
+   * and a failed archive must not break stopping a capture.
+   */
+  private async queueArchive(room: string): Promise<void> {
+    const recording = this.recordings.get(room);
+    this.recordings.delete(room);
+    const sessionId = this.lastSession.get(room);
+    this.lastSession.delete(room);
+
+    if (!recording) return;
+    await new Promise<void>((resolve) => recording.file.end(resolve));
+
+    // No session means nothing was ever live in this room, so the audio has
+    // nowhere to attach. Drop the file rather than leaving it in tmp.
+    if (!sessionId) {
+      await unlink(recording.path).catch(() => {});
+      return;
+    }
+
+    try {
+      await this.archiveQueue.add('retranscribe', {
+        sessionId,
+        room,
+        path: recording.path,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `could not queue archive for ${room}: ${(error as Error).message}`,
+      );
+      await unlink(recording.path).catch(() => {});
+    }
   }
 
   isActive(room: string): boolean {
@@ -187,6 +259,7 @@ export class CaptionsService implements OnModuleDestroy {
        */
       // Captured before the current line is appended: the model needs what
       // came before, not the fragment it is already being given.
+      this.lastSession.set(room, session.id);
       const context = this.recentFinals.get(session.id) ?? [];
       void this.translateAndEmit(
         session.id,
@@ -276,7 +349,13 @@ export class CaptionsService implements OnModuleDestroy {
   fullTranscript(sessionId: string): Promise<TranscriptSegment[]> {
     return this.segments.find({
       where: { sessionId },
-      order: { createdAt: 'ASC' },
+      /**
+       * Archived rows carry an offset and are all written in one insert, so
+       * createdAt cannot order them. Live rows have a null offset and sort
+       * last under Postgres' ASC default, which is right: a session is
+       * either archived or it is not, never half of each.
+       */
+      order: { offsetMs: 'ASC', createdAt: 'ASC' },
     });
   }
 

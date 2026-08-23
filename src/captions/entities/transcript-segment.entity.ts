@@ -40,6 +40,17 @@ export class TranscriptSegment {
   })
   source: TranscriptSource;
 
+  /**
+   * Milliseconds from the start of the recording.
+   *
+   * Null for live segments, which arrive one at a time and are ordered by
+   * createdAt. The archive pass writes every row at once, so createdAt cannot
+   * order them - and an offset is more useful anyway, since it points at a
+   * position in the audio rather than at when the row was inserted.
+   */
+  @Column({ type: 'integer', nullable: true })
+  offsetMs: number | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 }
