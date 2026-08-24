@@ -14,11 +14,11 @@ import { SessionTrack, SessionStatus } from '../entities/session.entity';
 export class CreateSessionDto {
   @ApiProperty()
   @IsString()
-  @MaxLength(500)
+  @MaxLength(255)
   title: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
+  @ApiProperty()
+  @IsString()
   description: string;
 
   @ApiProperty({

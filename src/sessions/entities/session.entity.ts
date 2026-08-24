@@ -23,6 +23,9 @@ export enum SessionTrack {
   GBV = 'gbv',
   HEALTH = 'health',
   SECURITY = 'security',
+  /** Not a theme — plenaries, ceremonies, breaks, registration and
+   *  anything the agenda files under a programme bucket, not a track. */
+  GENERAL = 'general',
 }
 
 /**
@@ -35,6 +38,7 @@ export const TRACK_LABELS: Record<SessionTrack, string> = {
   [SessionTrack.GBV]: 'Gender-Based Violence (GBV)',
   [SessionTrack.HEALTH]: 'Health & Nutrition',
   [SessionTrack.SECURITY]: 'Security & Transportation',
+  [SessionTrack.GENERAL]: 'General Programme',
 };
 
 export enum SessionStatus {
