@@ -139,26 +139,67 @@ export class DiscussionsController {
     @Query('format') format: string = 'csv',
     @Res() res: Response,
   ) {
-    const comments = await this.service.listForModeration(sessionId);
+    const comments = await this.service.exportThread(sessionId);
     if (format === 'json') {
       res.setHeader('Content-Type', 'application/json');
       return res.send(JSON.stringify(comments, null, 2));
     }
+
+    /**
+     * Every field is quoted, not just the body. Delegate names and
+     * organisations routinely contain commas ("Dr. Osasuyi Dirisu, Executive
+     * Director, PIC"), and one unquoted comma shifts every later column on
+     * that row without any error to notice.
+     */
     const cell = (v: string | number | boolean | null | undefined) =>
       `"${String(v ?? '').replace(/"/g, '""')}"`;
+    /** Semicolons inside one cell: a comma would need escaping the reader
+     *  then has to undo, and Excel splits multi-value cells on neither. */
+    const list = (v: string[]) => cell(v.join('; '));
+
     const rows = [
-      'createdAt,authorId,body,flagged,hidden',
+      // Left unquoted, unlike the data rows: a column name can never contain a
+      // comma, and a quoted first header would swallow the leading BOM in
+      // readers that do not strip it before parsing.
+      [
+        'createdAt',
+        'authorName',
+        'authorOrganisation',
+        'authorCountry',
+        'body',
+        'likes',
+        'dislikes',
+        'reaction',
+        'flagged',
+        'hidden',
+        'tracks',
+        'interests',
+      ].join(','),
       ...comments.map((c) =>
         [
-          c.createdAt.toISOString(),
-          c.authorId,
+          cell(c.createdAt),
+          cell(c.authorName),
+          cell(c.authorOrganisation),
+          cell(c.authorCountry),
           cell(c.body),
-          c.flagged,
-          !!c.hiddenAt,
+          cell(c.likes),
+          cell(c.dislikes),
+          cell(c.reaction),
+          cell(c.flagged),
+          cell(c.hidden),
+          list(c.tracks),
+          list(c.interests),
         ].join(','),
       ),
     ];
+
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.send(rows.join('\n'));
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="thread-${sessionId}.csv"`,
+    );
+    // Excel reads a UTF-8 CSV as the system codepage unless it sees a BOM,
+    // which turns every accented name in the delegate list into mojibake.
+    res.send(`\uFEFF${rows.join('\r\n')}`);
   }
 }

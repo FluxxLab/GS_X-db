@@ -14,6 +14,17 @@ import { CommentVote, VoteValue } from './entities/comment-vote.entity';
 import { DelegatesService } from '../delegate/delegates.service';
 import { SecurityService } from '../security/security.service';
 
+/** How the room responded, read off the vote counters. `none` is kept distinct
+ *  from `neutral`: nobody voting is not the same as the votes cancelling out. */
+export type Reaction = 'positive' | 'negative' | 'neutral' | 'none';
+
+function reactionOf(likes: number, dislikes: number): Reaction {
+  if (likes === 0 && dislikes === 0) return 'none';
+  if (likes > dislikes) return 'positive';
+  if (likes < dislikes) return 'negative';
+  return 'neutral';
+}
+
 @Injectable()
 export class DiscussionService {
   constructor(
@@ -307,6 +318,47 @@ export class DiscussionService {
     return this.comments.find({
       where: { sessionId },
       order: { createdAt: 'DESC' },
+    });
+  }
+
+  /**
+   * A thread with the commenter attached, for the admin export.
+   *
+   * Moderation only needs the text; a sponsor or partner report needs to know
+   * who said it and which segment they belong to, so this joins the delegate's
+   * onboarding tracks and interests onto every row. One bulk lookup rather
+   * than a join per comment — a thread is read whole.
+   *
+   * `reaction` is the room's response derived from the vote counters, not a
+   * reading of the comment itself: a well-received comment and an agreeable
+   * one are different things, and only the first is recorded anywhere.
+   */
+  async exportThread(sessionId: string) {
+    const comments = await this.comments.find({
+      where: { sessionId },
+      order: { createdAt: 'ASC' }, // reading order, not moderation order
+    });
+
+    const authors = await this.delegateService.profilesByIds(
+      comments.map((c) => c.authorId),
+    );
+
+    return comments.map((c) => {
+      const who = authors.get(c.authorId);
+      return {
+        createdAt: c.createdAt.toISOString(),
+        authorName: who?.name ?? 'Deleted delegate',
+        authorOrganisation: who?.organisation ?? '',
+        authorCountry: who?.country ?? '',
+        body: c.body,
+        likes: c.likes,
+        dislikes: c.dislikes,
+        reaction: reactionOf(c.likes, c.dislikes),
+        flagged: c.flagged,
+        hidden: c.hiddenAt !== null,
+        tracks: who?.tracks ?? [],
+        interests: who?.interests ?? [],
+      };
     });
   }
 

@@ -7,6 +7,15 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { AccessTier, Delegate } from './entities/delegate.entity';
+
+/** Who a delegate is, for reports that group by person rather than by content. */
+export interface DelegateProfile {
+  name: string;
+  organisation: string | null;
+  country: string | null;
+  tracks: string[];
+  interests: string[];
+}
 import { DataSource, IsNull, Repository, In } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 
@@ -301,6 +310,45 @@ export class DelegatesService {
       rows.map((r) => [
         r.id,
         { name: r.name, organisation: r.organisation, avatarUrl: r.avatarUrl },
+      ]),
+    );
+  }
+
+  /**
+   * The onboarding segmentation, for reports that group by who said something
+   * rather than what was said.
+   *
+   * Separate from namesByIds rather than folded into it: that one is on the
+   * connections and moderation paths, where pulling two text arrays per row
+   * would be paid on every request for data neither screen shows.
+   */
+  async profilesByIds(ids: string[]): Promise<Map<string, DelegateProfile>> {
+    const unique = [...new Set(ids)];
+    if (unique.length === 0) {
+      return new Map();
+    }
+
+    const rows = await this.delegateRepository.find({
+      where: { id: In(unique) },
+      select: {
+        id: true,
+        name: true,
+        organisation: true,
+        country: true,
+        tracks: true,
+        interests: true,
+      },
+    });
+    return new Map(
+      rows.map((r) => [
+        r.id,
+        {
+          name: r.name,
+          organisation: r.organisation,
+          country: r.country,
+          tracks: r.tracks ?? [],
+          interests: r.interests ?? [],
+        },
       ]),
     );
   }
