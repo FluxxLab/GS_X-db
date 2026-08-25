@@ -25,6 +25,27 @@ export class TranscriptSegment {
   room: string;
 
   /**
+   * Which language this row is in - 'en' for the Deepgram transcript, and one
+   * row per translation of it.
+   *
+   * Translations used to be broadcast and thrown away, which meant a delegate
+   * joining a session late could only ever be shown English history. Persisting
+   * them lets any language be backfilled, survives a socket reconnect, and
+   * makes translated transcripts exportable like the English one.
+   */
+  @Column({ type: 'varchar', length: 8, default: 'en' })
+  language: string;
+
+  /**
+   * The English row this is a translation of. Null on the English row itself.
+   *
+   * Kept so a translation can be traced to its source - useful when a
+   * translation reads oddly and someone needs to see what was actually said.
+   */
+  @Column({ type: 'uuid', nullable: true })
+  sourceSegmentId: string | null;
+
+  /**
    * Diarised voice index from the transcription provider, 0-based. Nullable:
    * a provider that cannot attribute a segment is not an error, and the
    * numbering restarts whenever the room's stream reopens, so it identifies a

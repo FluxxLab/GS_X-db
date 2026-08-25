@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { StorageService } from '../common/storage/storage.service';
+import { ParticipationService } from './participation.service';
 import { DelegateModule } from '../delegate/delegate.module';
 import { SessionsModule } from '../sessions/sessions.module';
 import { AppDocument } from './entities/app-document.entity';
@@ -15,6 +16,6 @@ import { ResourcesService } from './resources.service';
     SessionsModule,
   ],
   controllers: [ResourcesController],
-  providers: [ResourcesService, StorageService],
+  providers: [ResourcesService, StorageService, ParticipationService],
 })
 export class ResourcesModule {}

@@ -239,12 +239,14 @@ export class CaptionsService implements OnModuleDestroy {
     });
 
     if (event.isFinal) {
-      await this.segments.save(
+      // kept: each translation row points back at the English it came from
+      const englishSegment = await this.segments.save(
         this.segments.create({
           sessionId: session.id,
           room,
           text: event.text,
           speaker: event.speaker ?? null,
+          language: 'en',
         }),
       );
 
@@ -266,6 +268,8 @@ export class CaptionsService implements OnModuleDestroy {
         event.text,
         context,
         event.speaker,
+        room,
+        englishSegment.id,
       );
       this.recentFinals.set(
         session.id,
@@ -279,6 +283,8 @@ export class CaptionsService implements OnModuleDestroy {
     text: string,
     context: string[],
     speaker: number | undefined,
+    room: string,
+    sourceSegmentId: string,
   ): Promise<void> {
     try {
       const translations = await this.translate(text, context);
@@ -286,6 +292,33 @@ export class CaptionsService implements OnModuleDestroy {
 
       for (const [language, translated] of Object.entries(translations)) {
         if (!translated) continue;
+
+        /**
+         * Persisted, not just broadcast. Without this a delegate joining a
+         * session late could only ever be backfilled in English, and a
+         * reconnect lost every translated line said while they were away.
+         *
+         * Saved before the emit and not awaited as a block: the write must not
+         * delay the caption reaching the screen, but a failure here should not
+         * stop the broadcast either - the live line matters more than the row.
+         */
+        void this.segments
+          .save(
+            this.segments.create({
+              sessionId,
+              room,
+              text: translated,
+              speaker: speaker ?? null,
+              language,
+              sourceSegmentId,
+            }),
+          )
+          .catch((error) =>
+            this.logger.warn(
+              `failed to persist ${language} segment for ${sessionId}: ${error}`,
+            ),
+          );
+
         this.realtime.emitToRoom(
           Rooms.caption(sessionId, language),
           'caption',
@@ -346,9 +379,43 @@ export class CaptionsService implements OnModuleDestroy {
     return translations;
   }
 
-  fullTranscript(sessionId: string): Promise<TranscriptSegment[]> {
+  /**
+   * The tail of a session's captions, for a delegate joining late.
+   *
+   * Capped rather than complete: a two-hour plenary is thousands of rows, and
+   * a delegate wants the thread of what is being said now, not the whole
+   * morning. Returned oldest-first so the client can prepend it to the live
+   * feed without re-sorting.
+   */
+  async recentCaptions(
+    sessionId: string,
+    language = 'en',
+    limit = 60,
+  ): Promise<{ text: string; speaker: number | null; at: Date }[]> {
+    const rows = await this.segments.find({
+      where: { sessionId, language },
+      order: { offsetMs: 'DESC', createdAt: 'DESC' },
+      take: limit,
+    });
+    return rows
+      .reverse()
+      .map((r) => ({ text: r.text, speaker: r.speaker, at: r.createdAt }));
+  }
+
+  /**
+   * One session's transcript in one language.
+   *
+   * The language filter is not optional: since translations are persisted
+   * alongside the English rows, an unfiltered query returns every language
+   * interleaved, which reads as a corrupted transcript rather than a complete
+   * one. Defaults to English so existing admin callers are unchanged.
+   */
+  fullTranscript(
+    sessionId: string,
+    language = 'en',
+  ): Promise<TranscriptSegment[]> {
     return this.segments.find({
-      where: { sessionId },
+      where: { sessionId, language },
       /**
        * Archived rows carry an offset and are all written in one insert, so
        * createdAt cannot order them. Live rows have a null offset and sort

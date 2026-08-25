@@ -24,6 +24,7 @@ import { DelegatesService } from '../delegate/delegates.service';
 import type { Response } from 'express';
 import { UpsertDocumentDto } from './dto/upsert-document.dto';
 import { PURPLE_BOOK_KEY, ResourcesService } from './resources.service';
+import { ParticipationService } from './participation.service';
 
 @ApiTags('resources')
 @ApiBearerAuth()
@@ -32,6 +33,7 @@ export class ResourcesController {
   constructor(
     private readonly service: ResourcesService,
     private readonly delegates: DelegatesService,
+    private readonly participation: ParticipationService,
   ) {}
 
   // FR-15. Served from the database rather than a build-time constant so the
@@ -63,6 +65,22 @@ export class ResourcesController {
     return this.service.presignDocument(dto.contentType);
   }
 
+  /**
+   * The participation checklist that unlocks the certificate.
+   *
+   * Separate from issuing so the app can show progress *before* a delegate is
+   * eligible - a locked certificate with no explanation is just a dead end,
+   * and the point of the checklist is to tell them what is still missing.
+   */
+  @Get('certificates/me/participation')
+  @ApiOperation({
+    summary: 'Participation checklist and whether the certificate is unlocked',
+  })
+  @ApiResponse({ status: 200, description: 'Steps, progress and unlocked flag' })
+  participationStatus(@CurrentUser() user: AuthUser) {
+    return this.participation.statusFor(user.id);
+  }
+
   // FR-16. Issued on first request rather than pre-generated for everyone, so a
   // certificate only exists for a delegate who actually asked for one.
   @Post('certificates/me')
@@ -89,7 +107,7 @@ export class ResourcesController {
       'Download the certificate as a PDF. Issues it first if needed, so the same participation gate applies.',
   })
   @ApiResponse({ status: 200, description: 'application/pdf' })
-  @ApiResponse({ status: 403, description: 'Has not attended a session yet' })
+  @ApiResponse({ status: 403, description: 'Participation checklist not complete' })
   async certificatePdf(@CurrentUser() user: AuthUser, @Res() res: Response) {
     const delegate = await this.delegates.getProfile(user.id);
     const pdf = await this.service.certificatePdf(delegate.id, delegate.name);

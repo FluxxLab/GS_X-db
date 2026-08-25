@@ -8,6 +8,7 @@ import { randomBytes } from 'crypto';
 import { Repository } from 'typeorm';
 import { SessionsService } from '../sessions/sessions.service';
 import { StorageService } from '../common/storage/storage.service';
+import { ParticipationService } from './participation.service';
 import { AppDocument } from './entities/app-document.entity';
 import { Certificate } from './entities/certificate.entity';
 import { UpsertDocumentDto } from './dto/upsert-document.dto';
@@ -23,6 +24,7 @@ export class ResourcesService {
     @InjectRepository(Certificate)
     private readonly certificates: Repository<Certificate>,
     private readonly storage: StorageService,
+    private readonly participation: ParticipationService,
     private readonly sessions: SessionsService,
   ) {}
 
@@ -65,12 +67,23 @@ export class ResourcesService {
     const existing = await this.certificates.findOneBy({ delegateId });
     if (existing) return existing;
 
-    // Participation, not registration: a delegate must have been in at least one
-    // session while it was live. Checked only before the first issue - once a
-    // certificate exists it stays valid regardless.
-    if (!(await this.sessions.hasAttended(delegateId))) {
+    /**
+     * Participation, not registration - and now the full checklist rather than
+     * attendance alone. A certificate that says "participation" should require
+     * having participated: joined a session, played the trivia, backed a pitch,
+     * met people, said something.
+     *
+     * Checked only before the first issue. Once a certificate exists it stays
+     * valid regardless, so a delegate can never lose one they earned.
+     */
+    const participation = await this.participation.statusFor(delegateId);
+    if (!participation.unlocked) {
+      const remaining = participation.steps
+        .filter((s) => !s.done)
+        .map((s) => s.label)
+        .join('; ');
       throw new ForbiddenException(
-        'Attend a session to earn your certificate of participation',
+        `Complete your summit participation to unlock your certificate. Still to do: ${remaining}`,
       );
     }
 

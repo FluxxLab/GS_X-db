@@ -82,8 +82,32 @@ export class CaptionsController {
   @Get(':sessionId/transcript')
   @Roles(AccessTier.ADMIN)
   @ApiOperation({ summary: 'full caption transcript for a session(admin' })
-  transcript(@Param('sessionId', ParseUUIDPipe) sessionId: string) {
-    return this.captions.fullTranscript(sessionId);
+  transcript(
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+    @Query('language') language?: string,
+  ) {
+    return this.captions.fullTranscript(sessionId, language ?? 'en');
+  }
+
+  /**
+   * What a delegate missed.
+   *
+   * Deliberately separate from the admin transcript above: this one is capped,
+   * carries no moderation fields, and exists so someone joining a session late
+   * can catch up in whichever language they read. Without it, opening the
+   * captions screen mid-session showed an empty panel and everything already
+   * said was unreachable.
+   */
+  @Get(':sessionId/captions')
+  @ApiOperation({
+    summary: 'Recent captions for a session, in one language, for catch-up',
+  })
+  @ApiResponse({ status: 200, description: 'Oldest first, capped' })
+  recentCaptions(
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+    @Query('language') language?: string,
+  ) {
+    return this.captions.recentCaptions(sessionId, language ?? 'en');
   }
 
   @Get(':sessionId/transcript/export')
