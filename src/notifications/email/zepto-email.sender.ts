@@ -32,16 +32,19 @@ export class ZeptoEmailSender implements EmailSender {
       'https://api.zeptomail.com/v1.1/email';
 
     /**
-     * Zepto authenticates with `Authorization: Zoho-enczapikey <key>` - the
-     * prefix is part of the header value, not implied. A bare key pasted from
-     * the console authenticates as garbage and gets exactly the empty-body 401
-     * that crashed the old library, so the prefix is normalised here rather
-     * than trusted to whoever edits the .env next.
+     * Zepto authenticates with `Authorization: Zoho-enczapikey <key>`.
+     *
+     * The key itself never contains whitespace, so everything before the last
+     * whitespace-separated chunk is prefix debris - and debris is what turns
+     * up in real .env files: production carried `Zoho-Zoho-enczapikey <key>`,
+     * a hand-pasted double prefix, and a naive startsWith check stacked a
+     * third copy on top. Discarding everything but the key and attaching the
+     * prefix exactly once accepts a bare key, a correctly prefixed one, and
+     * any number of botched paste-jobs alike.
      */
     const raw = config.getOrThrow<string>('ZEPTOMAIL_TOKEN').trim();
-    this.token = raw.startsWith('Zoho-enczapikey')
-      ? raw
-      : `Zoho-enczapikey ${raw}`;
+    const key = raw.split(/\s+/).pop() ?? raw;
+    this.token = `Zoho-enczapikey ${key}`;
 
     this.from = {
       // Must be an address on a domain verified in ZeptoMail, or every send
