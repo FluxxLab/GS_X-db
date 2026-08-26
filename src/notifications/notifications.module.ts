@@ -109,8 +109,15 @@ function hasAllTermii(config: ConfigService): boolean {
     {
       provide: SMS_SENDER,
       inject: [ConfigService],
-      useFactory: (config: ConfigService) =>
-        hasAllTermii(config) ? new TermiiSmsSender(config) : new LogSmsSender(),
+      useFactory: (config: ConfigService) => {
+        // Announce the choice at boot so "did the SMS leave the server?" is
+        // answerable from the startup log alone.
+        const real = hasAllTermii(config);
+        logger.log(
+          `SMS sender: ${real ? 'Termii' : 'LogSmsSender (dev stub - nothing is sent)'}`,
+        );
+        return real ? new TermiiSmsSender(config) : new LogSmsSender();
+      },
     },
   ],
   exports: [EMAIL_SENDER, SMS_SENDER, NotificationsGateway],

@@ -7,15 +7,6 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { AccessTier, Delegate } from './entities/delegate.entity';
-
-/** Who a delegate is, for reports that group by person rather than by content. */
-export interface DelegateProfile {
-  name: string;
-  organisation: string | null;
-  country: string | null;
-  tracks: string[];
-  interests: string[];
-}
 import { DataSource, IsNull, Repository, In } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 
@@ -35,6 +26,15 @@ import { MessageReaction } from './entities/message-reaction.entity';
 import { SendDirectMessageDto } from './dto/send-direct-message.dto';
 import { RealtimeService, Rooms } from '../common/realtime/realtime.service';
 import { StorageService } from '../common/storage/storage.service';
+
+/** Who a delegate is, for reports that group by person rather than by content. */
+export interface DelegateProfile {
+  name: string;
+  organisation: string | null;
+  country: string | null;
+  tracks: string[];
+  interests: string[];
+}
 
 @Injectable()
 export class DelegatesService {
@@ -62,6 +62,12 @@ export class DelegatesService {
       .addSelect('delegate.passwordHash')
       .where('delegate.email = :email', { email })
       .getOne();
+  }
+
+  /** Password reset only. The hash arrives ready-made so bcrypt policy stays
+   *  in one place (auth), and no other profile field can ride along. */
+  async updatePassword(id: string, passwordHash: string): Promise<void> {
+    await this.delegateRepository.update({ id }, { passwordHash });
   }
 
   findById(id: string): Promise<Delegate | null> {

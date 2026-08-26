@@ -21,14 +21,40 @@ export class TermiiSmsSender implements SmsSender {
           from: this.config.getOrThrow('TERMII_SENDER_ID'),
           sms: text,
           type: 'plain',
-          channel: 'generic',
+          /**
+           * 'dnd', not 'generic': Nigerian carriers silently drop generic-route
+           * messages to lines with Do-Not-Disturb active (MTN enables it by
+           * default), and Termii's log just sits at SENT with no receipt. The
+           * DND route is carrier-whitelisted and reaches those lines. Costs a
+           * little more per SMS, but an OTP that never lands is a delegate who
+           * cannot register.
+           */
+          channel: 'dnd',
         }),
       });
-      if (!res.ok) {
-        const body = await res.text();
-        this.logger.error(`Termii send failed (${res.status}): ${body}`);
-        throw new Error(`SMS delivery failed: Termii HTTP ${res.status}`);
+
+      // Termii can answer HTTP 200 with a non-ok `code` (e.g. insufficient
+      // balance), so check the body as well as the status.
+      const body = (await res.json().catch(() => ({}))) as {
+        code?: string;
+        message_id?: string;
+        balance?: number;
+        message?: string;
+      };
+
+      if (!res.ok || body.code !== 'ok') {
+        this.logger.error(
+          `Termii send failed (${res.status}): ${JSON.stringify(body)}`,
+        );
+        throw new Error(
+          `SMS delivery failed: Termii ${body.message ?? res.status}`,
+        );
       }
+
+      // message_id is what you search for in Termii's Signal Log.
+      this.logger.log(
+        `Termii accepted sms to ${toPhone}: id=${body.message_id} balance=${body.balance}`,
+      );
     } catch (err) {
       if (
         err instanceof Error &&

@@ -7,6 +7,7 @@ import { RefreshDto } from './dto/refresh.dto';
 import { Public } from '../common/decorators/public.decorator';
 import { RegisterDto } from './dto/register.dto';
 import { RequestOtpDto } from './dto/request-otp.dto';
+import { ForgotPasswordDto, ResetPasswordDto } from './dto/reset-password.dto';
 import { OtpService } from './otp.service';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import type { AuthUser } from './strategies/jwt.stategies';
@@ -88,6 +89,36 @@ export class AuthController {
   })
   async requestOtp(@Body() dto: RequestOtpDto) {
     await this.otpService.requestOtp(dto.email, dto.channel, dto.phone);
+  }
+
+  @Public()
+  @Post('forgot-password')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Step 1 of password reset - email a code to the account',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Always 200, whether or not the email has an account',
+  })
+  @ApiResponse({ status: 429, description: 'Too many requests' })
+  async forgotPassword(@Body() dto: ForgotPasswordDto) {
+    await this.authService.forgotPassword(dto.email);
+  }
+
+  @Public()
+  @Post('reset-password')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Step 2 of password reset - code plus new password',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Password changed; every existing session is signed out',
+  })
+  @ApiResponse({ status: 400, description: 'Invalid or expired code' })
+  async resetPassword(@Body() dto: ResetPasswordDto) {
+    await this.authService.resetPassword(dto.email, dto.otp, dto.newPassword);
   }
 
   @Post('logout')

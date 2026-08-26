@@ -34,10 +34,17 @@ export class OtpService {
     private readonly sms: SmsSender,
   ) {}
 
+  /**
+   * `purpose` only changes the wording of the message. It defaults to
+   * 'registration' so the registration SMS stays byte-identical to the
+   * template submitted to Termii for sender-ID approval - password reset is
+   * email-only, so its different wording never touches the SMS template.
+   */
   async requestOtp(
     rawEmail: string,
     channel: OtpChannel,
     phone?: string,
+    purpose: 'registration' | 'password reset' = 'registration',
   ): Promise<void> {
     const email = rawEmail.toLowerCase().trim();
     if (channel === 'sms' && !phone) {
@@ -78,7 +85,7 @@ export class OtpService {
       throw new InternalServerErrorException('OTP service unavailable');
     }
 
-    const text = `Your GS-26 registration code is ${code}. it expires in 10 minutes`;
+    const text = `Your GS-26 ${purpose} code is ${code}. it expires in 10 minutes`;
 
     try {
       if (channel === 'sms') {

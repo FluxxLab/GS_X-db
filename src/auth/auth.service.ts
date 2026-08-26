@@ -175,6 +175,51 @@ export class AuthService {
     };
   }
 
+  /**
+   * Anti-enumeration by design: the response is identical whether the email
+   * has an account or not. The OTP email is only actually sent when one
+   * exists, so an attacker probing addresses learns nothing from this route.
+   */
+  async forgotPassword(rawEmail: string): Promise<void> {
+    const email = rawEmail.toLowerCase().trim();
+    const delegate = await this.delegate.findByEmailForAuth(email);
+    if (!delegate) return;
+    await this.otpService.requestOtp(
+      email,
+      'email',
+      undefined,
+      'password reset',
+    );
+  }
+
+  /**
+   * The OTP is the credential here - it proves inbox control, the same proof
+   * registration relies on. On success every live refresh token is revoked:
+   * a reset that leaves stolen sessions signed in would defeat its own point.
+   */
+  async resetPassword(
+    rawEmail: string,
+    otp: string,
+    newPassword: string,
+  ): Promise<void> {
+    const email = rawEmail.toLowerCase().trim();
+    await this.otpService.assertValid(email, otp);
+
+    const delegate = await this.delegate.findByEmailForAuth(email);
+    // Generic message on purpose: a distinct "no such account" here would leak
+    // what forgotPassword deliberately hides.
+    if (!delegate) throw new BadRequestException('Invalid or expired code');
+
+    await this.delegate.updatePassword(
+      delegate.id,
+      await bcrypt.hash(newPassword, 12),
+    );
+    await this.refreshTokenRepository.update(
+      { userId: delegate.id, revokedAt: IsNull(), consumedAt: IsNull() },
+      { revokedAt: new Date() },
+    );
+  }
+
   async registration(dto: RegisterDto, ctx: RequestContext) {
     const email = dto.email.toLowerCase();
 

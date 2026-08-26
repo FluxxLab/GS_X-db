@@ -76,7 +76,10 @@ export class ResourcesController {
   @ApiOperation({
     summary: 'Participation checklist and whether the certificate is unlocked',
   })
-  @ApiResponse({ status: 200, description: 'Steps, progress and unlocked flag' })
+  @ApiResponse({
+    status: 200,
+    description: 'Steps, progress and unlocked flag',
+  })
   participationStatus(@CurrentUser() user: AuthUser) {
     return this.participation.statusFor(user.id);
   }
@@ -107,7 +110,10 @@ export class ResourcesController {
       'Download the certificate as a PDF. Issues it first if needed, so the same participation gate applies.',
   })
   @ApiResponse({ status: 200, description: 'application/pdf' })
-  @ApiResponse({ status: 403, description: 'Participation checklist not complete' })
+  @ApiResponse({
+    status: 403,
+    description: 'Participation checklist not complete',
+  })
   async certificatePdf(@CurrentUser() user: AuthUser, @Res() res: Response) {
     const delegate = await this.delegates.getProfile(user.id);
     const pdf = await this.service.certificatePdf(delegate.id, delegate.name);

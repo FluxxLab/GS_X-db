@@ -39,48 +39,42 @@ export class ParticipationService {
   constructor(@InjectDataSource() private readonly db: DataSource) {}
 
   async statusFor(delegateId: string): Promise<ParticipationStatus> {
-    const [
-      registered,
-      attended,
-      trivia,
-      pitch,
-      connections,
-      comments,
-    ] = await Promise.all([
-      this.count(
-        `SELECT COUNT(*) FROM delegates WHERE id = $1 AND "consentAt" IS NOT NULL`,
-        [delegateId],
-      ),
-      this.count(
-        `SELECT COUNT(*) FROM session_attendance WHERE "delegateId" = $1`,
-        [delegateId],
-      ),
-      this.count(
-        `SELECT COUNT(*) FROM trivia_answers WHERE "delegateId" = $1`,
-        [delegateId],
-      ),
-      this.count(`SELECT COUNT(*) FROM pitch_votes WHERE "delegateId" = $1`, [
-        delegateId,
-      ]),
-      /**
-       * Connections are directed edges, so a delegate's network spans both
-       * columns - counting only fromDelegateId would ignore everyone who
-       * scanned *their* pass. DISTINCT on the other party so a pair that
-       * connected both ways still counts once.
-       */
-      this.count(
-        `SELECT COUNT(DISTINCT other) FROM (
+    const [registered, attended, trivia, pitch, connections, comments] =
+      await Promise.all([
+        this.count(
+          `SELECT COUNT(*) FROM delegates WHERE id = $1 AND "consentAt" IS NOT NULL`,
+          [delegateId],
+        ),
+        this.count(
+          `SELECT COUNT(*) FROM session_attendance WHERE "delegateId" = $1`,
+          [delegateId],
+        ),
+        this.count(
+          `SELECT COUNT(*) FROM trivia_answers WHERE "delegateId" = $1`,
+          [delegateId],
+        ),
+        this.count(`SELECT COUNT(*) FROM pitch_votes WHERE "delegateId" = $1`, [
+          delegateId,
+        ]),
+        /**
+         * Connections are directed edges, so a delegate's network spans both
+         * columns - counting only fromDelegateId would ignore everyone who
+         * scanned *their* pass. DISTINCT on the other party so a pair that
+         * connected both ways still counts once.
+         */
+        this.count(
+          `SELECT COUNT(DISTINCT other) FROM (
            SELECT "toDelegateId" AS other FROM delegate_connections WHERE "fromDelegateId" = $1
            UNION
            SELECT "fromDelegateId" AS other FROM delegate_connections WHERE "toDelegateId" = $1
          ) AS network`,
-        [delegateId],
-      ),
-      this.count(
-        `SELECT COUNT(*) FROM session_comments WHERE "authorId" = $1`,
-        [delegateId],
-      ),
-    ]);
+          [delegateId],
+        ),
+        this.count(
+          `SELECT COUNT(*) FROM session_comments WHERE "authorId" = $1`,
+          [delegateId],
+        ),
+      ]);
 
     const steps: ParticipationStep[] = [
       {
@@ -133,7 +127,7 @@ export class ParticipationService {
   }
 
   private async count(sql: string, params: unknown[]): Promise<number> {
-    const rows = (await this.db.query(sql, params)) as { count: string }[];
+    const rows = await this.db.query(sql, params);
     return Number(rows[0]?.count ?? 0);
   }
 }
