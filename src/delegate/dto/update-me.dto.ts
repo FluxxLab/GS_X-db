@@ -13,17 +13,26 @@ export class UpdateMeDto {
     type: [String],
     description: 'Array of delegate IDs to update',
   })
+  /**
+   * ArrayMaxSize takes no `each` - with it, the size check runs against every
+   * *element*, and a string is never an array, so any non-empty tracks or
+   * interests failed validation outright. That is why onboarding could not
+   * save: the 400 fired before the handler ever ran. Element length gets its
+   * own each-constraint instead.
+   */
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  @ArrayMaxSize(50, { each: true })
+  @MaxLength(100, { each: true })
+  @ArrayMaxSize(50)
   tracks?: string[];
 
   @ApiPropertyOptional({ type: [String], maxItems: 5 })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  @ArrayMaxSize(5, { each: true })
+  @MaxLength(100, { each: true })
+  @ArrayMaxSize(5)
   interests?: string[];
 
   @ApiPropertyOptional({
