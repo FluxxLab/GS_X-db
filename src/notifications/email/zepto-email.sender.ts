@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { SendMailClient } from 'zeptomail';
 import type { EmailSender } from './email-sender.interface';
 
 /**
@@ -10,22 +9,40 @@ import type { EmailSender } from './email-sender.interface';
  * a host blocks, and a transactional API gives per-message delivery errors
  * instead of a socket timeout. The OTP path is the only caller, so a message
  * that silently fails to send is a delegate who cannot register.
+ *
+ * This calls the API directly with fetch instead of the `zeptomail` package.
+ * The package parses every response body as JSON on a promise chain it never
+ * ties to the one it returns - so when Zepto answers a 401 with an empty body,
+ * the parse failure becomes an *unhandled* rejection that the caller's
+ * try/catch cannot see, and Node terminates the process. In production that
+ * was: password-reset request -> crashed API -> 502 for everyone -> Docker
+ * restart. Twenty lines of fetch is cheaper than a dependency that can take
+ * the service down.
  */
 @Injectable()
 export class ZeptoEmailSender implements EmailSender {
   private readonly logger = new Logger(ZeptoEmailSender.name);
-  private readonly client: SendMailClient;
+  private readonly url: string;
+  private readonly token: string;
   private readonly from: { address: string; name: string };
 
   constructor(config: ConfigService) {
-    this.client = new SendMailClient({
-      // Default matches ZeptoMail's documented endpoint; overridable for the
-      // EU/IN data-centre hostnames.
-      url:
-        config.get<string>('ZEPTOMAIL_URL') ??
-        'https://api.zeptomail.com/v1.1/email',
-      token: config.getOrThrow<string>('ZEPTOMAIL_TOKEN'),
-    });
+    this.url =
+      config.get<string>('ZEPTOMAIL_URL') ??
+      'https://api.zeptomail.com/v1.1/email';
+
+    /**
+     * Zepto authenticates with `Authorization: Zoho-enczapikey <key>` - the
+     * prefix is part of the header value, not implied. A bare key pasted from
+     * the console authenticates as garbage and gets exactly the empty-body 401
+     * that crashed the old library, so the prefix is normalised here rather
+     * than trusted to whoever edits the .env next.
+     */
+    const raw = config.getOrThrow<string>('ZEPTOMAIL_TOKEN').trim();
+    this.token = raw.startsWith('Zoho-enczapikey')
+      ? raw
+      : `Zoho-enczapikey ${raw}`;
+
     this.from = {
       // Must be an address on a domain verified in ZeptoMail, or every send
       // is rejected regardless of the token.
@@ -35,21 +52,45 @@ export class ZeptoEmailSender implements EmailSender {
   }
 
   async send(to: string, subject: string, text: string): Promise<void> {
+    let response: Response;
     try {
-      await this.client.sendMail({
-        from: this.from,
-        to: [{ email_address: { address: to, name: to } }],
-        subject,
-        /**
-         * textbody, not htmlbody: every caller is an OTP or a short
-         * transactional notice, and plain text cannot carry an injection from
-         * whatever built the message.
-         */
-        textbody: text,
+      response = await fetch(this.url, {
+        method: 'POST',
+        headers: {
+          Authorization: this.token,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          from: this.from,
+          to: [{ email_address: { address: to, name: to } }],
+          subject,
+          /**
+           * textbody, not htmlbody: every caller is an OTP or a short
+           * transactional notice, and plain text cannot carry an injection
+           * from whatever built the message.
+           */
+          textbody: text,
+        }),
+        signal: AbortSignal.timeout(15_000),
       });
     } catch (err) {
-      // The message is logged, never the token or the body.
-      this.logger.error(`ZeptoMail send failed to ${to}: ${String(err)}`);
+      // network failure or timeout - never the token or the body
+      this.logger.error(`ZeptoMail unreachable sending to ${to}: ${String(err)}`);
+      throw new Error('Email delivery failed');
+    }
+
+    if (!response.ok) {
+      /**
+       * Read as text, never .json(): the empty or HTML error body is the
+       * exact input that killed the previous implementation. The first slice
+       * of it goes to the log because Zepto's real reason (bad token, domain
+       * not verified, sandbox mode) lives there.
+       */
+      const body = await response.text().catch(() => '');
+      this.logger.error(
+        `ZeptoMail rejected send to ${to}: HTTP ${response.status} ${body.slice(0, 300)}`,
+      );
       throw new Error('Email delivery failed');
     }
   }
