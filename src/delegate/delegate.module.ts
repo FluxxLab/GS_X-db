@@ -9,6 +9,7 @@ import { DelegatesController } from './delegates.controller';
 import { DelegateConnection } from './entities/delegate-connection.entity';
 import { DirectMessage } from './entities/direct-message.entity';
 import { MessageReaction } from './entities/message-reaction.entity';
+import { DelegateBlock } from './entities/delegate-block.entity';
 import { RealtimeModule } from '../common/realtime/realtime.module';
 
 @Module({

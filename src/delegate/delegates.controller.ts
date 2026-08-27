@@ -304,6 +304,37 @@ export class DelegatesController {
     return this.service.listThread(user.id, otherDelegateId);
   }
 
+  @Post(':id/block')
+  @HttpCode(204)
+  @ApiOperation({
+    summary:
+      'Block a delegate: no DMs or connections in either direction (App Store UGC requirement)',
+  })
+  @ApiParam({ name: 'id', description: 'Delegate ID', type: String })
+  async block(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    await this.service.blockDelegate(user.id, id);
+  }
+
+  @Delete(':id/block')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Remove your block on a delegate' })
+  @ApiParam({ name: 'id', description: 'Delegate ID', type: String })
+  async unblock(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    await this.service.unblockDelegate(user.id, id);
+  }
+
+  @Get('me/blocks')
+  @ApiOperation({ summary: 'Delegates you have blocked, for client-side state' })
+  myBlocks(@CurrentUser() user: AuthUser) {
+    return this.service.myBlocks(user.id);
+  }
+
   @Post('messages/:messageId/react')
   @HttpCode(200)
   @ApiOperation({

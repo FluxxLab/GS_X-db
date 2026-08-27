@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
   UnauthorizedException,
   Logger,
 } from '@nestjs/common';
@@ -23,6 +24,7 @@ import { ListDirectoryDto } from './dto/list-directory.dto';
 import { DelegateConnection } from './entities/delegate-connection.entity';
 import { DirectMessage } from './entities/direct-message.entity';
 import { MessageReaction } from './entities/message-reaction.entity';
+import { DelegateBlock } from './entities/delegate-block.entity';
 import { SendDirectMessageDto } from './dto/send-direct-message.dto';
 import { RealtimeService, Rooms } from '../common/realtime/realtime.service';
 import { StorageService } from '../common/storage/storage.service';
@@ -51,6 +53,8 @@ export class DelegatesService {
     private readonly messages: Repository<DirectMessage>,
     @InjectRepository(MessageReaction)
     private readonly reactions: Repository<MessageReaction>,
+    @InjectRepository(DelegateBlock)
+    private readonly blocks: Repository<DelegateBlock>,
     private readonly realtime: RealtimeService,
     private readonly storage: StorageService,
     private readonly dataSource: DataSource,
@@ -690,6 +694,42 @@ export class DelegatesService {
    * delta. Deltas would need the client to hold a correct prior state, and a
    * client that missed one event while backgrounded would stay wrong forever.
    */
+  /** True when either party has blocked the other - enforcement is symmetric. */
+  private async blockedEitherWay(a: string, b: string): Promise<boolean> {
+    const row = await this.blocks.findOne({
+      where: [
+        { blockerId: a, blockedId: b },
+        { blockerId: b, blockedId: a },
+      ],
+    });
+    return row !== null;
+  }
+
+  async blockDelegate(blockerId: string, blockedId: string): Promise<void> {
+    if (blockerId === blockedId) {
+      throw new BadRequestException('You cannot block yourself');
+    }
+    if (!(await this.findById(blockedId))) {
+      throw new NotFoundException('Delegate not found');
+    }
+    // orIgnore: blocking twice is a no-op, not an error - the unique index rules
+    await this.blocks
+      .createQueryBuilder()
+      .insert()
+      .values({ blockerId, blockedId })
+      .orIgnore()
+      .execute();
+  }
+
+  async unblockDelegate(blockerId: string, blockedId: string): Promise<void> {
+    await this.blocks.delete({ blockerId, blockedId });
+  }
+
+  async myBlocks(delegateId: string): Promise<{ blockedId: string }[]> {
+    const rows = await this.blocks.find({ where: { blockerId: delegateId } });
+    return rows.map((r) => ({ blockedId: r.blockedId }));
+  }
+
   async reactToMessage(
     callerId: string,
     messageId: string,
