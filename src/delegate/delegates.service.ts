@@ -325,6 +325,29 @@ export class DelegatesService {
   }
 
   /**
+   * namesByIds with the avatar resolved to a signed URL - what a client needs
+   * to render an author line. namesByIds itself keeps the raw key because its
+   * other callers (harvest reports) never render the photo.
+   */
+  async authorsByIds(
+    ids: string[],
+  ): Promise<
+    Map<
+      string,
+      { name: string; organisation: string | null; avatarUrl: string | null }
+    >
+  > {
+    const raw = await this.namesByIds(ids);
+    const entries = await Promise.all(
+      Array.from(raw.entries()).map(async ([id, a]) => {
+        const avatarUrl = await this.storage.resolveAvatar(a.avatarUrl);
+        return [id, { ...a, avatarUrl }] as const;
+      }),
+    );
+    return new Map(entries);
+  }
+
+  /**
    * The onboarding segmentation, for reports that group by who said something
    * rather than what was said.
    *
@@ -452,8 +475,10 @@ export class DelegatesService {
       .offset(offset)
       .getManyAndCount();
 
+    // resolve keys to signed URLs here too - the directory used to hand the raw
+    // S3 key to the app, which rendered as a blank circle for every photo
     return {
-      items: rows.map(DelegatesService.toDirectoryView),
+      items: await this.withAvatars(rows.map(DelegatesService.toDirectoryView)),
       total,
     };
   }
@@ -468,7 +493,7 @@ export class DelegatesService {
       throw new NotFoundException('Delegate not found');
     }
     return {
-      ...DelegatesService.toDirectoryView(delegate),
+      ...(await this.withAvatar(DelegatesService.toDirectoryView(delegate))),
       pendingReview: delegate.pendingReview,
     };
   }
@@ -578,7 +603,7 @@ export class DelegatesService {
     if (uniqueIds.length === 0) return [];
     const others = await this.namesByIds(uniqueIds);
 
-    return conns
+    const items = conns
       .map((c) => {
         const otherId =
           c.fromDelegateId === delegateId ? c.toDelegateId : c.fromDelegateId;
@@ -604,6 +629,9 @@ export class DelegatesService {
       delegate: DelegateDirectoryDto;
       mutual: boolean;
     }>;
+
+    const delegates = await this.withAvatars(items.map((i) => i.delegate));
+    return items.map((i, idx) => ({ ...i, delegate: delegates[idx] }));
   }
 
   async countConnections(delegateId: string): Promise<number> {
@@ -901,7 +929,7 @@ export class DelegatesService {
       const other = byId.get(t.otherId);
       if (!other) continue;
       out.push({
-        delegate: DelegatesService.toDirectoryView(other),
+        delegate: await this.withAvatar(DelegatesService.toDirectoryView(other)),
         lastMessage: {
           body: t.last.body,
           createdAt: t.last.createdAt,

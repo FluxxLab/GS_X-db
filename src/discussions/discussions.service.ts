@@ -52,6 +52,13 @@ export class DiscussionService {
       this.comments.create({ sessionId, authorId, body: dto.body }),
     );
 
+    // The live payload carries the same author fields as the list, so a
+    // comment arriving over the socket renders with a name and photo instead
+    // of the anonymous "Delegate" placeholder it used to get.
+    const author = (await this.delegateService.authorsByIds([authorId])).get(
+      authorId,
+    );
+
     this.realtime.emitToRoom(
       Rooms.discussion(sessionId),
       'discussion:comment',
@@ -59,6 +66,9 @@ export class DiscussionService {
         id: comment.id,
         sessionId,
         authorId,
+        authorName: author?.name ?? 'Delegate',
+        authorOrganisation: author?.organisation ?? null,
+        authorAvatarUrl: author?.avatarUrl ?? null,
         body: comment.body,
         createAt: comment.createdAt,
       },
@@ -81,7 +91,7 @@ export class DiscussionService {
       take: query.limit,
     });
 
-    const authors = await this.delegateService.namesByIds(
+    const authors = await this.delegateService.authorsByIds(
       comments.map((c) => c.authorId),
     );
 
@@ -99,6 +109,7 @@ export class DiscussionService {
       ...c,
       authorName: authors.get(c.authorId)?.name ?? 'Delegate',
       authorOrganisation: authors.get(c.authorId)?.organisation ?? null,
+      authorAvatarUrl: authors.get(c.authorId)?.avatarUrl ?? null,
       myVote: myVotes.get(c.id) ?? null,
     }));
   }
