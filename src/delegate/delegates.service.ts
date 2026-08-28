@@ -550,6 +550,10 @@ export class DelegatesService {
     if (target.flagged) {
       throw new BadRequestException('Cannot connect: delegate is flagged');
     }
+    // Same wording whichever side blocked, so neither party learns which
+    if (await this.blockedEitherWay(fromId, toId)) {
+      throw new ForbiddenException('You cannot connect with this delegate');
+    }
 
     const pairKey = DelegatesService.pairKey(fromId, toId);
     const [aId, bId] = pairKey.split(':');
@@ -659,6 +663,12 @@ export class DelegatesService {
     const body = dto.body.trim();
     if (!body) {
       throw new BadRequestException('Message body cannot be empty');
+    }
+    // Refused in both directions with identical wording: a block that still
+    // let the blocked person read replies would not be a block, and the
+    // message must not reveal which side did the blocking.
+    if (await this.blockedEitherWay(senderId, recipientId)) {
+      throw new ForbiddenException('You cannot message this delegate');
     }
 
     const pairKey = DelegatesService.pairKey(senderId, recipientId);
@@ -929,7 +939,9 @@ export class DelegatesService {
       const other = byId.get(t.otherId);
       if (!other) continue;
       out.push({
-        delegate: await this.withAvatar(DelegatesService.toDirectoryView(other)),
+        delegate: await this.withAvatar(
+          DelegatesService.toDirectoryView(other),
+        ),
         lastMessage: {
           body: t.last.body,
           createdAt: t.last.createdAt,

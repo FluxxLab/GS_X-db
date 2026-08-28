@@ -20,6 +20,7 @@ import { RealtimeModule } from '../common/realtime/realtime.module';
       DelegateConnection,
       DirectMessage,
       MessageReaction,
+      DelegateBlock,
     ]),
     RealtimeModule,
   ],

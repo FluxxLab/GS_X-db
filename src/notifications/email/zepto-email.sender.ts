@@ -79,7 +79,9 @@ export class ZeptoEmailSender implements EmailSender {
       });
     } catch (err) {
       // network failure or timeout - never the token or the body
-      this.logger.error(`ZeptoMail unreachable sending to ${to}: ${String(err)}`);
+      this.logger.error(
+        `ZeptoMail unreachable sending to ${to}: ${String(err)}`,
+      );
       throw new Error('Email delivery failed');
     }
 

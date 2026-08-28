@@ -6,9 +6,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * a null-constraint violation. The service now sets it explicitly; this
  * default makes the column safe for any future writer as well.
  */
-export class BookmarkCreatedAtDefault1787900000000
-  implements MigrationInterface
-{
+export class BookmarkCreatedAtDefault1787900000000 implements MigrationInterface {
   name = 'BookmarkCreatedAtDefault1787900000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

@@ -330,7 +330,9 @@ export class DelegatesController {
   }
 
   @Get('me/blocks')
-  @ApiOperation({ summary: 'Delegates you have blocked, for client-side state' })
+  @ApiOperation({
+    summary: 'Delegates you have blocked, for client-side state',
+  })
   myBlocks(@CurrentUser() user: AuthUser) {
     return this.service.myBlocks(user.id);
   }
