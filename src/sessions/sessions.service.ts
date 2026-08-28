@@ -173,7 +173,9 @@ export class SessionsService {
     await this.bookmarks
       .createQueryBuilder()
       .insert()
-      .values({ delegateId, sessionId })
+      // createdAt set explicitly: a query-builder insert bypasses entity
+      // hooks, and the column was created NOT NULL without a default
+      .values({ delegateId, sessionId, createdAt: new Date() })
       .orIgnore()
       .execute();
   }
