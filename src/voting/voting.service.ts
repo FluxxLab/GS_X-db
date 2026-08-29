@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 import { RealtimeService, Rooms } from '../common/realtime/realtime.service';
 import { REDIS } from '../common/redis/redis.module';
 import { CreatePitchEntryDto } from './dto/create-pitch-entry.dto';
+import { UpdatePitchEntryDto } from './dto/update-pitch-entry.dto';
 import { PitchEntry } from './entities/pitch-entry.entity';
 import { PitchVote } from './entities/pitch-vote.entity';
 
@@ -79,6 +80,49 @@ export class VotingService {
 
   createEntry(dto: CreatePitchEntryDto): Promise<PitchEntry> {
     return this.entries.save(this.entries.create(dto));
+  }
+
+  /**
+   * Admin edit. Votes are untouched - only the entry's own fields change, so
+   * correcting a misspelt name mid-event cannot disturb the tally.
+   */
+  async updateEntry(
+    id: string,
+    dto: UpdatePitchEntryDto,
+  ): Promise<PitchEntry & { voteCount: number }> {
+    const entry = await this.entries.findOneBy({ id });
+    if (!entry) throw new NotFoundException('Pitch entry not found');
+
+    Object.assign(entry, dto);
+    const saved = await this.entries.save(entry);
+    const voteCount = await this.voteCount(id);
+
+    this.realtime.emitToRoom(Rooms.voting, 'voting:entry-updated', {
+      ...saved,
+      voteCount,
+    });
+    return { ...saved, voteCount };
+  }
+
+  /**
+   * Admin removal: the entry, every vote cast for it, and its Redis counter.
+   *
+   * The votes go first - leaving them would keep this entry in each voter's
+   * "already voted" list, so a delegate could never vote for a replacement
+   * entry created with a new id. Dropping the counter key stops a stale count
+   * being served if the id were ever reused.
+   */
+  async removeEntry(id: string): Promise<void> {
+    const entry = await this.entries.findOneBy({ id });
+    if (!entry) throw new NotFoundException('Pitch entry not found');
+
+    await this.votes.delete({ entryId: id });
+    await this.redis.del(voteKey(id));
+    await this.entries.delete({ id });
+
+    this.realtime.emitToRoom(Rooms.voting, 'voting:entry-deleted', {
+      entryId: id,
+    });
   }
 
   private async voteCount(entryId: string): Promise<number> {

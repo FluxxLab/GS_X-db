@@ -14,7 +14,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { AvatarUploadDto } from '../delegate/dto/avatar-upload.dto';
+import { DocumentUploadDto } from './dto/document-upload.dto';
 import { AccessTier } from '../delegate/entities/delegate.entity';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
@@ -59,9 +59,9 @@ export class ResourcesController {
   @HttpCode(200)
   @ApiOperation({
     summary:
-      'Signed URL for a document: PUT the file, then send publicUrl to the document route',
+      'Signed URL for a document: PUT the file, then send the returned key as the document url',
   })
-  documentUploadUrl(@Body() dto: AvatarUploadDto) {
+  documentUploadUrl(@Body() dto: DocumentUploadDto) {
     return this.service.presignDocument(dto.contentType);
   }
 

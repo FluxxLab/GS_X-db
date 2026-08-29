@@ -28,6 +28,7 @@ import {
   UpdateRegistrationEntryDto,
 } from './dto/create-delegate.dto';
 import { SetTierDto } from './dto/set-tier.dto';
+import { SetApprovalDto } from './dto/set-approval.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthUser } from '../auth/strategies/jwt.stategies';
 import { UpdateMeDto } from './dto/update-me.dto';
@@ -144,6 +145,42 @@ export class DelegatesController {
     @Body() dto: SetTierDto,
   ) {
     return this.service.setTier(id, dto.tier);
+  }
+
+  // Single segment, so it cannot be captured by the ':id/...' routes above.
+  @Post('approve-all')
+  @Roles(AccessTier.ADMIN)
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Approve every delegate still awaiting review',
+  })
+  @ApiResponse({ status: 200, description: 'Returns how many were approved' })
+  @Audit({
+    type: 'delegates_approved_all',
+    description: 'All pending delegates approved by admin',
+    severity: EventSeverity.WARNING,
+  })
+  approveAll() {
+    return this.service.approveAll();
+  }
+
+  @Patch(':id/approval')
+  @Roles(AccessTier.ADMIN)
+  @ApiOperation({
+    summary: 'Grant or withdraw full access for one delegate',
+  })
+  @ApiResponse({ status: 200, description: 'Delegate approval updated' })
+  @ApiResponse({ status: 404, description: 'Delegate not found' })
+  @Audit({
+    type: 'delegate_approval_changed',
+    description: 'Delegate approval changed by admin',
+    severity: EventSeverity.WARNING,
+  })
+  setApproval(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() dto: SetApprovalDto,
+  ) {
+    return this.service.setApproval(id, dto.approved);
   }
 
   @Get('export')

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   Param,
@@ -21,6 +22,7 @@ import type { AuthUser } from '../auth/strategies/jwt.stategies';
 import { AccessTier } from '../delegate/entities/delegate.entity';
 import { AnswerTriviaDto } from './dto/answer-trivia.dto';
 import { CreateTriviaQuestionDto } from './dto/create-trivia.dto';
+import { UpdateTriviaQuestionDto } from './dto/update-trivia.dto';
 import { TriviaService } from './trivia.service';
 import { Audit } from 'src/common/decorators/audit.decorator';
 
@@ -90,6 +92,34 @@ export class TriviaController {
   })
   pushLive(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.pushLive(id);
+  }
+
+  // Declared after ':id/close' and ':id/live' so those keep matching first.
+  @Patch(':id')
+  @Roles(AccessTier.ADMIN)
+  @Audit({ type: 'trivia_updated', description: 'Trivia question edited' })
+  @ApiOperation({
+    summary: 'Edit a question (a live one is re-sent to delegates)',
+  })
+  @ApiResponse({ status: 404, description: 'No such question' })
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateTriviaQuestionDto,
+  ) {
+    return this.service.update(id, dto);
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  @Roles(AccessTier.ADMIN)
+  @Audit({ type: 'trivia_deleted', description: 'Trivia question deleted' })
+  @ApiOperation({
+    summary: 'Delete a question along with every answer given to it',
+  })
+  @ApiResponse({ status: 204, description: 'Deleted' })
+  @ApiResponse({ status: 404, description: 'No such question' })
+  async remove(@Param('id', ParseUUIDPipe) id: string) {
+    await this.service.remove(id);
   }
 
   @Get(':id/stats')

@@ -28,10 +28,17 @@ export class ResourcesService {
     private readonly sessions: SessionsService,
   ) {}
 
+  /**
+   * The stored `url` is an S3 key for anything uploaded through the admin, and
+   * the bucket blocks public access - so it is signed on read, exactly like a
+   * delegate photo. A genuinely external URL (someone pasted a link to a file
+   * hosted elsewhere) is passed through untouched.
+   */
   async getDocument(key: string): Promise<AppDocument> {
     const doc = await this.documents.findOneBy({ key });
     if (!doc) throw new NotFoundException(`No document published for "${key}"`);
-    return doc;
+    const url = await this.storage.resolveStoredUrl(doc.url);
+    return { ...doc, url: url ?? doc.url };
   }
 
   upsertDocument(key: string, dto: UpsertDocumentDto): Promise<AppDocument> {

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, IsNull, Not, Repository } from 'typeorm';
 import { DeviceToken } from './entities/device-token.entity';
@@ -79,5 +79,17 @@ export class NotificationsService {
       order: { sentAt: 'DESC' },
       take: 50,
     });
+  }
+
+  /**
+   * Admin retraction. The row goes, so it leaves every inbox on the next
+   * fetch, and the broadcast removes it from inboxes that are open right now.
+   * Push notifications already delivered to phones cannot be recalled.
+   */
+  async remove(id: string): Promise<void> {
+    const existing = await this.notifications.findOneBy({ id });
+    if (!existing) throw new NotFoundException('Notification not found');
+    await this.notifications.delete({ id });
+    this.realtime.emitGlobal('notification:deleted', { id });
   }
 }

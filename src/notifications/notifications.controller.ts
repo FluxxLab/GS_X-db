@@ -1,4 +1,13 @@
-import { Body, Controller, Delete, Get, HttpCode, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  ParseUUIDPipe,
+  Post,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -52,6 +61,21 @@ export class NotificationsController {
   async create(@Body() dto: CreateNotificationDto) {
     // the acting admin is captured by the @Audit interceptor, not here
     return this.service.announce(dto);
+  }
+
+  // Declared before the 'register' routes only for reading order; the path
+  // segment ':id' is constrained to a UUID so it cannot swallow them.
+  @Delete(':id')
+  @Roles(AccessTier.ADMIN)
+  @HttpCode(204)
+  @Audit({ type: 'notification_deleted', description: 'Notification deleted' })
+  @ApiOperation({
+    summary: 'Retract an announcement: removes it from every delegate inbox',
+  })
+  @ApiResponse({ status: 204, description: 'Deleted' })
+  @ApiResponse({ status: 404, description: 'No such notification' })
+  async remove(@Param('id', new ParseUUIDPipe()) id: string) {
+    await this.service.remove(id);
   }
 
   @Post('register')

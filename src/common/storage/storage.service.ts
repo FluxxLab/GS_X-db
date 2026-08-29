@@ -82,7 +82,16 @@ export class StorageService {
    * a data migration. Returns null rather than throwing - a broken avatar must
    * never take down a profile or a directory page.
    */
-  async resolveAvatar(
+  /** Delegate photos - see resolveStoredUrl, which this is a named case of. */
+  resolveAvatar(stored: string | null | undefined): Promise<string | null> {
+    return this.resolveStoredUrl(stored);
+  }
+
+  /**
+   * Turn whatever is in the database into something a client can fetch: our
+   * own keys get signed, external URLs pass through.
+   */
+  async resolveStoredUrl(
     stored: string | null | undefined,
   ): Promise<string | null> {
     if (!stored) return null;

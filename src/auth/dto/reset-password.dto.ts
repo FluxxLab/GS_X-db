@@ -24,9 +24,9 @@ export class ResetPasswordDto {
   otp: string;
 
   /** Same rules as registration - a reset must not become the weak way in. */
-  @ApiProperty({ minLength: 12, maxLength: 255 })
+  @ApiProperty({ minLength: 8, maxLength: 255 })
   @IsString()
-  @MinLength(12)
+  @MinLength(8)
   @MaxLength(255)
   newPassword: string;
 }

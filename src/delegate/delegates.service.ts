@@ -239,6 +239,51 @@ export class DelegatesService {
     return this.delegateRepository.save(delegate);
   }
 
+  /**
+   * Approval gate. `pendingReview` is set at registration for anyone whose
+   * email was not on the organisers' list; until an admin clears it the app
+   * shows a waiting screen instead of the summit.
+   *
+   * The delegate's own room is notified so a phone sitting on that screen
+   * lets them in without a restart.
+   */
+  async setApproval(id: string, approved: boolean): Promise<Delegate> {
+    const delegate = await this.findById(id);
+    if (!delegate) throw new NotFoundException('Delegate not found');
+    // pendingReview is the inverse of approved, so this is "already in state"
+    if (delegate.pendingReview === !approved) return delegate;
+
+    delegate.pendingReview = !approved;
+    const saved = await this.delegateRepository.save(delegate);
+    this.realtime.emitToRoom(Rooms.network(id), 'delegate:approval', {
+      approved,
+    });
+    return saved;
+  }
+
+  /**
+   * Approve everyone still waiting, in one statement rather than a row at a
+   * time - on the morning of the summit this is a queue of hundreds.
+   */
+  async approveAll(): Promise<{ approved: number }> {
+    const pending = await this.delegateRepository.find({
+      where: { pendingReview: true },
+      select: { id: true },
+    });
+    if (pending.length === 0) return { approved: 0 };
+
+    await this.delegateRepository.update(
+      { pendingReview: true },
+      { pendingReview: false },
+    );
+    for (const { id } of pending) {
+      this.realtime.emitToRoom(Rooms.network(id), 'delegate:approval', {
+        approved: true,
+      });
+    }
+    return { approved: pending.length };
+  }
+
   async getProfile(id: string): Promise<Delegate> {
     const d = await this.findById(id);
     if (!d) {

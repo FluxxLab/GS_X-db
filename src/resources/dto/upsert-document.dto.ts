@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsUrl, MaxLength } from 'class-validator';
+import { IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class UpsertDocumentDto {
   @ApiProperty({ example: 'The Purple Book 2026' })
@@ -9,9 +9,10 @@ export class UpsertDocumentDto {
 
   @ApiProperty({
     description:
-      'Public URL, typically the publicUrl from POST /documents/upload-url',
+      'The `key` returned by POST /documents/upload-url, or an external https URL. Keys are signed when the document is read, so this is not required to be a URL.',
+    example: 'documents/6f1c2b9e-...',
   })
-  @IsUrl()
+  @IsString()
   @MaxLength(512)
   url: string;
 

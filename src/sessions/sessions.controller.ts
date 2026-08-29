@@ -11,7 +11,13 @@ import {
   Query,
   ParseArrayPipe,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiTags,
+  ApiOperation,
+  ApiQuery,
+  ApiResponse,
+} from '@nestjs/swagger';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -114,6 +120,32 @@ export class SessionController {
     @Body() dto: UpdateSessionStatusDto,
   ) {
     return this.service.setStatus(id, dto.status);
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  @Roles(AccessTier.ADMIN)
+  @Audit({ type: 'session_deleted', description: 'Session deleted' })
+  @ApiOperation({
+    summary:
+      'Delete a session with its bookmarks, attendance, comments and transcript',
+  })
+  @ApiQuery({
+    name: 'force',
+    required: false,
+    description:
+      'Required to delete a session that has attendance, comments or captions',
+  })
+  @ApiResponse({ status: 204, description: 'Deleted' })
+  @ApiResponse({
+    status: 409,
+    description: 'Session has activity; retry with force=true',
+  })
+  async remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('force') force?: string,
+  ) {
+    await this.service.remove(id, force === 'true');
   }
 
   @Post(':id/bookmark')

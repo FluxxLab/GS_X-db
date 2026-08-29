@@ -1,4 +1,6 @@
 import { SessionAttendance } from './entities/attendance.entity';
+import { SessionComment } from '../discussions/entities/session-comment.entity';
+import { TranscriptSegment } from '../captions/entities/transcript-segment.entity';
 import { StorageService } from '../common/storage/storage.service';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -16,6 +18,10 @@ import { SpeakersController } from './speakers.controller';
       Speaker,
       SessionBookmark,
       SessionAttendance,
+      // deleting a session has to clear its comments and transcript too -
+      // neither table has a foreign key back to sessions
+      SessionComment,
+      TranscriptSegment,
     ]),
   ],
   controllers: [SessionController, SpeakersController],

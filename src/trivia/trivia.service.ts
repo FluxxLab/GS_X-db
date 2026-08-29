@@ -11,6 +11,7 @@ import { RealtimeService, Rooms } from '../common/realtime/realtime.service';
 import { REDIS } from '../common/redis/redis.module';
 import { AnswerTriviaDto } from './dto/answer-trivia.dto';
 import { CreateTriviaQuestionDto } from './dto/create-trivia.dto';
+import { UpdateTriviaQuestionDto } from './dto/update-trivia.dto';
 import { TriviaAnswer } from './entities/trivia-answer.entity';
 import {
   TriviaOption,
@@ -209,6 +210,56 @@ export class TriviaService {
       distribution: await this.distribution(id),
     });
     return saved;
+  }
+
+  /**
+   * Admin edit - typo fixes and corrections.
+   *
+   * A question that is already live is re-broadcast so phones showing it pick
+   * the correction up immediately; answers already given are kept. Changing
+   * `correctOption` after delegates have answered re-scores those answers
+   * against the new key, which is the intended behaviour when the key was
+   * simply entered wrong.
+   */
+  async update(
+    id: string,
+    dto: UpdateTriviaQuestionDto,
+  ): Promise<TriviaQuestion> {
+    const question = await this.questions.findOneBy({ id });
+    if (!question) throw new NotFoundException('Question not found');
+
+    Object.assign(question, dto);
+    const saved = await this.questions.save(question);
+
+    if (saved.status === TriviaStatus.LIVE) {
+      const distribution = await this.distribution(saved.id);
+      this.realtime.emitToRoom(Rooms.trivia, 'trivia:question', {
+        ...this.toDelegateShape(saved),
+        playersCount: Object.values(distribution).reduce((a, b) => a + b, 0),
+      });
+    }
+    return saved;
+  }
+
+  /**
+   * Admin removal: the question, every answer to it, and its Redis
+   * distribution counter. Answers go too - leaving them would keep the
+   * question in each delegate's history as an entry pointing at nothing, and
+   * would count towards the certificate checklist for a question that no
+   * longer exists.
+   */
+  async remove(id: string): Promise<void> {
+    const question = await this.questions.findOneBy({ id });
+    if (!question) throw new NotFoundException('Question not found');
+
+    await this.answers.delete({ questionId: id });
+    await this.redis.del(disKey(id));
+    await this.questions.delete({ id });
+
+    // clears the card on any phone showing it, live or not
+    this.realtime.emitToRoom(Rooms.trivia, 'trivia:deleted', {
+      questionId: id,
+    });
   }
 
   async stats(id: string) {

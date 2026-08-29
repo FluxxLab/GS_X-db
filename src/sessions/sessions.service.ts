@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { CreateSessionDto } from './dto/create-session.dto';
@@ -13,6 +17,8 @@ import {
   TRACK_LABELS,
 } from './entities/session.entity';
 import { Speaker } from './entities/speaker.entity';
+import { SessionComment } from '../discussions/entities/session-comment.entity';
+import { TranscriptSegment } from '../captions/entities/transcript-segment.entity';
 import { RealtimeService, Rooms } from 'src/common/realtime/realtime.service';
 
 @Injectable()
@@ -29,6 +35,12 @@ export class SessionsService {
 
     @InjectRepository(SessionAttendance)
     private readonly attendance: Repository<SessionAttendance>,
+
+    @InjectRepository(SessionComment)
+    private readonly comments: Repository<SessionComment>,
+
+    @InjectRepository(TranscriptSegment)
+    private readonly transcripts: Repository<TranscriptSegment>,
 
     private readonly realtime: RealtimeService,
   ) {}
@@ -166,6 +178,53 @@ export class SessionsService {
     });
 
     return saved;
+  }
+
+  /**
+   * Delete a session and everything hanging off it.
+   *
+   * Only `session_speakers` has a foreign key back to sessions (ON DELETE
+   * CASCADE); bookmarks, attendance, comments and transcript segments all
+   * carry a plain sessionId column, so they have to be cleared here or they
+   * become orphans that still count towards certificates and still surface in
+   * delegates' saved lists.
+   *
+   * Anything a delegate actually did - attended, commented - and the session's
+   * transcript are real records, so removing a session that has them needs
+   * `force`. The refusal names what would be destroyed rather than making the
+   * organiser guess.
+   */
+  async remove(id: string, force = false): Promise<void> {
+    const session = await this.findById(id); // 404s if it is already gone
+
+    const [attendance, comments, transcripts, bookmarks] = await Promise.all([
+      this.attendance.countBy({ sessionId: id }),
+      this.comments.countBy({ sessionId: id }),
+      this.transcripts.countBy({ sessionId: id }),
+      this.bookmarks.countBy({ sessionId: id }),
+    ]);
+
+    if (!force && (attendance || comments || transcripts)) {
+      const parts = [
+        attendance && `${attendance} attendance record(s)`,
+        comments && `${comments} comment(s)`,
+        transcripts && `${transcripts} caption line(s)`,
+        bookmarks && `${bookmarks} bookmark(s)`,
+      ].filter(Boolean);
+      throw new ConflictException(
+        `"${session.title}" has ${parts.join(', ')}. Deleting removes them permanently.`,
+      );
+    }
+
+    await this.bookmarks.delete({ sessionId: id });
+    await this.attendance.delete({ sessionId: id });
+    await this.comments.delete({ sessionId: id });
+    await this.transcripts.delete({ sessionId: id });
+    await this.sessions.delete({ id });
+
+    // global, not the session room: a delegate looking at the programme is not
+    // in that room, and their agenda has to lose the session too
+    this.realtime.emitGlobal('session:deleted', { sessionId: id });
   }
 
   async bookmark(delegateId: string, sessionId: string): Promise<void> {
