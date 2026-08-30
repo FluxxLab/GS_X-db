@@ -32,7 +32,20 @@ const SYSTEM_PROMPT = [
   '- Gender and inclusion vocabulary is the subject matter, not incidental. Use the established term in each language rather than a literal calque.',
   `- Leave these terms exactly as written: ${DO_NOT_TRANSLATE.join(', ')}.`,
   '- Keep names of people and organisations in their original form.',
-  '- If a fragment carries nothing translatable - a filler, a stray syllable - return it unchanged.',
+  /**
+   * These three replaced a single line reading "if a fragment carries nothing
+   * translatable - a filler, a stray syllable - return it unchanged".
+   *
+   * Given a garbled fragment the model did not return it unchanged: it wrote
+   * the Hausa and Pidgin for "this is nonsense" and put that on delegates'
+   * screens as though the speaker had said it. Judging the input is a far
+   * worse failure than translating it badly, because it is indistinguishable
+   * from translation - so the ban is now explicit, and the fallback is
+   * spelled out as copying the text rather than described.
+   */
+  '- Never comment on, judge or describe the fragment. Do not write that it is unclear, meaningless, nonsense, rubbish, an error, or not translatable - in English or in any target language. The reader cannot tell such a remark apart from a translation and will believe the speaker said it.',
+  '- Every field must contain only a translation of the fragment, nothing else. No notes, no apologies, no explanation, no quotation marks you were not given.',
+  '- If a fragment is filler, a stray syllable, or too garbled to carry meaning, copy the fragment into every field exactly as you received it. Copying it is always correct; describing it never is.',
   ...glossaryLines(),
   ...exampleLines(),
 ].join('\n');

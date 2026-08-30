@@ -294,6 +294,16 @@ export class CaptionsService implements OnModuleDestroy {
         if (!translated) continue;
 
         /**
+         * Source and result together, so a wrong translation can be proved
+         * rather than argued about. Debug level: this is four lines per
+         * caption, which is too much for normal running but exactly what is
+         * needed while the translation quality is being judged.
+         */
+        this.logger.debug(
+          `[${language}] "${text.slice(0, 70)}" -> "${translated.slice(0, 70)}"`,
+        );
+
+        /**
          * Persisted, not just broadcast. Without this a delegate joining a
          * session late could only ever be backfilled in English, and a
          * reconnect lost every translated line said while they were away.
