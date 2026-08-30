@@ -54,11 +54,7 @@ const SOURCE_ALLOWS =
  * Igbo orthography, and "ọ̀rọ̀ asán" must match the same rule as "oro asan".
  */
 const normalise = (text: string): string =>
-  text
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[‘’]/g, "'");
+  text.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[‘’]/g, "'");
 
 export function isVerdict(source: string, translated: string): boolean {
   // The speaker said it, so translating it is correct.

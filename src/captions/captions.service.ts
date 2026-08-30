@@ -20,6 +20,7 @@ import { join } from 'node:path';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { CaptionLanguage } from './translation/languages';
+import { dropVerdicts } from './translation/verdict-filter';
 import { TRANSLATION_PROVIDER } from './translation/translation.interface';
 import type {
   TranslationProvider,
@@ -375,7 +376,19 @@ export class CaptionsService implements OnModuleDestroy {
     const cached = await this.redis.get(key);
     if (cached) return JSON.parse(cached) as Translations;
 
-    const translations = await this.translation.translate(text, context);
+    const raw = await this.translation.translate(text, context);
+
+    /**
+     * Filtered before it is cached, so a verdict cannot be served from Redis
+     * for the next 24 hours after slipping through once.
+     */
+    const { kept: translations, dropped } = dropVerdicts(text, raw);
+    if (dropped.length > 0) {
+      this.logger.warn(
+        `dropped ${dropped.join(', ')} - translator commented on the fragment instead of translating it: "${text.slice(0, 70)}"`,
+      );
+    }
+
     if (Object.keys(translations).length > 0) {
       // Sessions repeat terminology constantly - titles, names, recurring
       // phrases - so a day of captions hits this often enough to matter.
