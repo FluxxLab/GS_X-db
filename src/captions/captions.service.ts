@@ -397,9 +397,109 @@ export class CaptionsService implements OnModuleDestroy {
       order: { offsetMs: 'DESC', createdAt: 'DESC' },
       take: limit,
     });
+
+    if (language !== 'en') {
+      const filled = await this.fillTranslationGaps(sessionId, language, rows);
+      if (filled.length > 0) rows.push(...filled);
+      rows.sort(
+        (a, b) =>
+          (a.offsetMs ?? 0) - (b.offsetMs ?? 0) ||
+          a.createdAt.getTime() - b.createdAt.getTime(),
+      );
+      return rows
+        .slice(-limit)
+        .map((r) => ({ text: r.text, speaker: r.speaker, at: r.createdAt }));
+    }
+
     return rows
       .reverse()
       .map((r) => ({ text: r.text, speaker: r.speaker, at: r.createdAt }));
+  }
+
+  /**
+   * Translate the English lines this language is missing, on demand.
+   *
+   * Translations are produced live, as each final lands. Anything said while
+   * the translator was unreachable, or before a session's captions were being
+   * translated at all, therefore has an English row and nothing else - and a
+   * delegate switching to Hausa mid-session saw a short history or an empty
+   * one, with no way to ever recover those lines.
+   *
+   * So the gap is filled from the English rows the moment someone asks for
+   * that language, and persisted, which means it is paid for once no matter
+   * how many delegates read it afterwards. The service-level cache in
+   * translate() usually absorbs even that.
+   *
+   * Bounded deliberately: only the most recent GAP_FILL_MAX lines, a few at a
+   * time. This runs inside a delegate's HTTP request, and the thread of what
+   * is being said now is worth more to them than a complete morning that
+   * arrives after the request times out.
+   */
+  private static readonly GAP_FILL_MAX = 12;
+  private static readonly GAP_FILL_CONCURRENCY = 4;
+
+  private async fillTranslationGaps(
+    sessionId: string,
+    language: string,
+    existing: TranscriptSegment[],
+  ): Promise<TranscriptSegment[]> {
+    const english = await this.segments.find({
+      where: { sessionId, language: 'en' },
+      order: { offsetMs: 'DESC', createdAt: 'DESC' },
+      take: 60,
+    });
+    if (english.length === 0) return [];
+
+    const translated = new Set(
+      existing.map((r) => r.sourceSegmentId).filter(Boolean),
+    );
+    // newest first, so a capped fill covers what they are reading right now
+    const missing = english
+      .filter((r) => !translated.has(r.id))
+      .slice(0, CaptionsService.GAP_FILL_MAX);
+    if (missing.length === 0) return [];
+
+    this.logger.log(
+      `translating ${missing.length} missing ${language} caption(s) for ${sessionId}`,
+    );
+
+    const saved: TranscriptSegment[] = [];
+    for (
+      let i = 0;
+      i < missing.length;
+      i += CaptionsService.GAP_FILL_CONCURRENCY
+    ) {
+      const batch = missing.slice(i, i + CaptionsService.GAP_FILL_CONCURRENCY);
+      const results = await Promise.all(
+        batch.map(async (source) => {
+          try {
+            // No context: the surrounding lines are not reliably present for
+            // an old fragment, and a wrong context is worse than none.
+            const translations = await this.translate(source.text, []);
+            const text = translations[language as CaptionLanguage];
+            if (!text) return null;
+            return await this.segments.save(
+              this.segments.create({
+                sessionId,
+                room: source.room,
+                text,
+                speaker: source.speaker,
+                language,
+                sourceSegmentId: source.id,
+                offsetMs: source.offsetMs,
+              }),
+            );
+          } catch (error) {
+            this.logger.warn(
+              `gap-fill failed for ${source.id}: ${(error as Error).message}`,
+            );
+            return null;
+          }
+        }),
+      );
+      saved.push(...results.filter((r): r is TranscriptSegment => r !== null));
+    }
+    return saved;
   }
 
   /**
