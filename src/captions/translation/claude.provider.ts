@@ -67,11 +67,16 @@ export class ClaudeTranslationProvider implements TranslationProvider {
     this.client = new Anthropic({
       apiKey: config.getOrThrow<string>('ANTHROPIC_API_KEY'),
       /**
-       * A caption nobody reads within a couple of seconds is worthless, so
-       * fail fast instead of queueing behind a slow call. Retries cost the
-       * same latency twice, which is why there is only one.
+       * Translation is off the critical path: the English caption is emitted
+       * before this call is even made, so the only thing a longer timeout
+       * delays is the translated line itself.
+       *
+       * Raised from 5s because that budget was being spent in the wrong
+       * place. A wrong line delivered fast is worse than a right line
+       * delivered a second later - the delegate reading Hausa cannot tell a
+       * bad translation from a good one, so correctness has to win.
        */
-      timeout: 5_000,
+      timeout: 12_000,
       maxRetries: 1,
     });
     this.model = config.get<string>('ANTHROPIC_MODEL') ?? 'claude-opus-5';
@@ -112,13 +117,22 @@ export class ClaudeTranslationProvider implements TranslationProvider {
         },
       ],
       /**
-       * Translating one fragment is not a reasoning task, and every thinking
-       * token is latency a delegate feels. Low effort rather than thinking
-       * disabled: disabling it on Opus can leak reasoning into the answer.
+       * Medium, not low.
+       *
+       * "Translating one fragment is not a reasoning task" was true of the
+       * translation and wrong about everything around it: the model also has
+       * to hold a dozen rules, four orthographies and a register, and at low
+       * effort it dropped them. Given a garbled fragment it wrote the Hausa
+       * and Pidgin for "this is nonsense" into the caption panel - a comment
+       * on the input, delivered as though the speaker had said it.
+       *
+       * The extra thinking costs about a second on a line that is already
+       * behind the English one. That is the right trade for a caption a
+       * delegate has no way of checking.
        */
       output_config: {
         format: zodOutputFormat(TranslationSchema),
-        effort: 'low',
+        effort: 'medium',
       },
       messages: [{ role: 'user', content: prompt }],
     });
