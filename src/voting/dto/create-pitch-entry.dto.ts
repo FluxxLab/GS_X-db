@@ -1,4 +1,4 @@
-import { IsString, MaxLength, IsEnum } from 'class-validator';
+import { IsString, MaxLength, IsEnum, IsUUID } from 'class-validator';
 import { ApiTags, ApiProperty } from '@nestjs/swagger';
 import { SessionTrack } from 'src/sessions/entities/session.entity';
 
@@ -28,4 +28,10 @@ export class CreatePitchEntryDto {
   })
   @IsString()
   description: string;
+
+  @ApiProperty({
+    description: 'The topic (ballot) this pitch competes in',
+  })
+  @IsUUID()
+  topicId: string;
 }

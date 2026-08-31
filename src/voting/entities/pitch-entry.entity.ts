@@ -2,10 +2,13 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  JoinColumn,
+  ManyToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
 import { SessionTrack } from '../../sessions/entities/session.entity';
+import { PitchTopic } from './pitch-topic.entity';
 
 @Entity('pitch_entries')
 export class PitchEntry {
@@ -29,4 +32,11 @@ export class PitchEntry {
 
   @UpdateDateColumn({ type: 'timestamptz' })
   updatedAt: Date;
+
+  @Column({ type: 'uuid' })
+  topicId: string;
+
+  @ManyToOne(() => PitchTopic, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'topicId' })
+  topic: PitchTopic;
 }
