@@ -11,6 +11,7 @@ export enum CaptionLanguage {
   IG = 'ig',
   YO = 'yo',
   PCM = 'pcm',
+  FR = 'fr',
 }
 
 /** Every language except the source. */
@@ -19,6 +20,7 @@ export const TRANSLATION_TARGETS = [
   CaptionLanguage.IG,
   CaptionLanguage.YO,
   CaptionLanguage.PCM,
+  CaptionLanguage.FR,
 ] as const;
 
 export const LANGUAGE_NAMES: Record<CaptionLanguage, string> = {
@@ -27,6 +29,7 @@ export const LANGUAGE_NAMES: Record<CaptionLanguage, string> = {
   [CaptionLanguage.IG]: 'Igbo',
   [CaptionLanguage.YO]: 'Yoruba',
   [CaptionLanguage.PCM]: 'Nigerian Pidgin',
+  [CaptionLanguage.FR]: 'French',
 };
 
 /** Anything unrecognised falls back to English rather than erroring a join. */

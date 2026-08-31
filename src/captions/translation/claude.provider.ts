@@ -55,6 +55,7 @@ const TranslationSchema = z.object({
   ig: z.string(),
   yo: z.string(),
   pcm: z.string(),
+  fr: z.string(),
 });
 
 @Injectable()
@@ -94,12 +95,12 @@ export class ClaudeTranslationProvider implements TranslationProvider {
     const prompt =
       context.length > 0
         ? [
-            'Context (already spoken, do not translate):',
-            ...context,
-            '',
-            'Fragment to translate:',
-            text,
-          ].join('\n')
+          'Context (already spoken, do not translate):',
+          ...context,
+          '',
+          'Fragment to translate:',
+          text,
+        ].join('\n')
         : text;
 
     const response = await this.client.messages.parse({
@@ -148,6 +149,7 @@ export class ClaudeTranslationProvider implements TranslationProvider {
       [CaptionLanguage.IG]: parsed.ig,
       [CaptionLanguage.YO]: parsed.yo,
       [CaptionLanguage.PCM]: parsed.pcm,
+      [CaptionLanguage.FR]: parsed.fr,
     };
   }
 }
