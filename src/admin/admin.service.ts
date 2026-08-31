@@ -17,7 +17,9 @@ export class AdminService {
     const [delegate, sessions, topPitches, liveSessions] = await Promise.all([
       this.delegate.segmentStats(),
       this.session.statusCounts(),
-      this.voting.topPitches(),
+      // Admin surface: includes pitches on topics that have not opened yet,
+      // which are withheld everywhere a delegate can reach.
+      this.voting.topPitches(5, true),
       this.session.findLiveNow(),
     ]);
 

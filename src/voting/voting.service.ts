@@ -40,15 +40,25 @@ export class VotingService {
    * One call rather than entries-plus-a-tally-each because both clients render
    * the pitchathon grouped by topic: a ballot is only meaningful next to the
    * others on the same ballot.
+   *
+   * A pending topic is withheld from delegates in full - not its name, not its
+   * innovators, not its pitch count. The reveal is the moment voting opens, so
+   * it has to be enforced here: filtering in the client would still ship the
+   * unopened line-up to every phone, one response body away from being read.
+   * Admin curates topics before they open, so admin sees them all.
    */
-  async listTopics() {
+  async listTopics(includePending = false) {
     const [topics, entries, counts] = await Promise.all([
       this.topics.find({ order: { position: 'ASC', createdAt: 'ASC' } }),
       this.entries.find({ order: { createdAt: 'ASC' } }),
       this.allCounts(),
     ]);
 
-    return topics.map((topic) => {
+    const visible = includePending
+      ? topics
+      : topics.filter((t) => t.voting !== TopicVoting.PENDING);
+
+    return visible.map((topic) => {
       const own = entries
         .filter((e) => e.topicId === topic.id)
         .map((e) => ({ ...e, voteCount: counts.get(e.id) ?? 0 }));
@@ -72,7 +82,13 @@ export class VotingService {
 
     Object.assign(topic, dto);
     const saved = await this.topics.save(topic);
-    this.realtime.emitToRoom(Rooms.voting, 'voting:topic-updated', saved);
+    // The voting room is every delegate, so a pending topic's name cannot go
+    // out on it - withholding it from GET /topics and then broadcasting it
+    // here would leak the same thing by the other channel. Admin sees the
+    // change in this call's own response; it lands for everyone when the
+    // ballot opens.
+    if (saved.voting !== TopicVoting.PENDING)
+      this.realtime.emitToRoom(Rooms.voting, 'voting:topic-updated', saved);
     return saved;
   }
 
@@ -135,12 +151,31 @@ export class VotingService {
 
   /* --------------------------------------------------------------- entries */
 
-  async listEntries(): Promise<Array<PitchEntry & { voteCount: number }>> {
-    const [entries, counts] = await Promise.all([
+  /**
+   * Flat list of pitches. Carries the same withholding rule as listTopics -
+   * a pitch on an unopened ballot is exactly what must not be visible, and
+   * this endpoint would otherwise hand it over without the topic wrapper.
+   */
+  async listEntries(
+    includePending = false,
+  ): Promise<Array<PitchEntry & { voteCount: number }>> {
+    const [entries, counts, pendingTopics] = await Promise.all([
       this.entries.find({ order: { createdAt: 'ASC' } }),
       this.allCounts(),
+      includePending
+        ? Promise.resolve(null)
+        : this.topics.find({
+            where: { voting: TopicVoting.PENDING },
+            select: { id: true },
+          }),
     ]);
-    return entries.map((e) => ({ ...e, voteCount: counts.get(e.id) ?? 0 }));
+
+    const hidden = pendingTopics && new Set(pendingTopics.map((t) => t.id));
+    const visible = hidden
+      ? entries.filter((e) => !hidden.has(e.topicId))
+      : entries;
+
+    return visible.map((e) => ({ ...e, voteCount: counts.get(e.id) ?? 0 }));
   }
 
   createEntry(dto: CreatePitchEntryDto): Promise<PitchEntry> {
@@ -148,8 +183,14 @@ export class VotingService {
   }
 
   /**
-   * Admin edit. Ballots are untouched - only the entry's own fields change, so
-   * correcting a misspelt name mid-event cannot disturb the tally.
+   * Admin edit, including moving a pitch onto another ballot (dto.topicId) -
+   * that is how a pitch gets assigned out of the unassigned bucket.
+   *
+   * Correcting a name or a description cannot disturb the tally. Moving the
+   * pitch can: its ballots are recorded against a topic, so carrying a pitch
+   * that already holds votes into another topic would take those votes with it
+   * and leave two tallies wrong. A pitch is therefore only movable while no
+   * one has voted for it - which is to say, before its ballot opens.
    */
   async updateEntry(
     id: string,
@@ -158,14 +199,30 @@ export class VotingService {
     const entry = await this.entries.findOneBy({ id });
     if (!entry) throw new NotFoundException('Pitch entry not found');
 
+    if (dto.topicId && dto.topicId !== entry.topicId) {
+      const target = await this.topics.findOneBy({ id: dto.topicId });
+      if (!target) throw new NotFoundException('Target topic not found');
+
+      const cast = await this.votes.countBy({ entryId: id });
+      if (cast > 0)
+        throw new ConflictException(
+          'This pitch already holds votes and can no longer be moved to another topic',
+        );
+    }
+
     Object.assign(entry, dto);
     const saved = await this.entries.save(entry);
     const voteCount = await this.votes.countBy({ entryId: id });
 
-    this.realtime.emitToRoom(Rooms.voting, 'voting:entry-updated', {
-      ...saved,
-      voteCount,
-    });
+    // Same rule as the topic broadcast: this payload is the pitch itself -
+    // innovator, country, description - so it must not reach the voting room
+    // while its ballot is unopened. That is precisely what is being withheld.
+    const topic = await this.topics.findOneBy({ id: saved.topicId });
+    if (topic && topic.voting !== TopicVoting.PENDING)
+      this.realtime.emitToRoom(Rooms.voting, 'voting:entry-updated', {
+        ...saved,
+        voteCount,
+      });
     return { ...saved, voteCount };
   }
 
@@ -249,8 +306,8 @@ export class VotingService {
    * ranking anyone wins - the winners are per topic, decided on their own
    * ballot - so this is presented as "most votes", never as a leaderboard.
    */
-  async topPitches(limit = 5) {
-    const all = await this.listEntries();
+  async topPitches(limit = 5, includePending = false) {
+    const all = await this.listEntries(includePending);
     return all
       .sort((a, b) => b.voteCount - a.voteCount)
       .slice(0, limit)

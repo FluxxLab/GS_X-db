@@ -16,7 +16,6 @@ import { CreatePitchEntryDto } from './dto/create-pitch-entry.dto';
 import { UpdatePitchEntryDto } from './dto/update-pitch-entry.dto';
 import { CreatePitchTopicDto } from './dto/create-pitch-topic.dto';
 import { UpdatePitchTopicDto } from './dto/update-pitch-topic.dto';
-import { Public } from 'src/common/decorators/public.decorator';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { AccessTier } from 'src/delegate/entities/delegate.entity';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
@@ -30,13 +29,17 @@ export class VotingController {
 
   /* ---------------------------------------------------------------- topics */
 
-  @Public()
+  // Not @Public(): what comes back depends on who is asking. A pending topic
+  // and its pitches are withheld until voting opens, and only admin - who
+  // curates them - sees them before that.
   @Get('topics')
   @ApiOperation({
-    summary: 'Every topic with its pitches, live standing and voting state',
+    summary:
+      'Topics with their pitches, live standing and voting state. Pending ' +
+      'topics are withheld from everyone but admin until voting opens.',
   })
-  listTopics() {
-    return this.votingService.listTopics();
+  listTopics(@CurrentUser() user: AuthUser) {
+    return this.votingService.listTopics(user.role === AccessTier.ADMIN);
   }
 
   @Post('topics')
@@ -88,20 +91,22 @@ export class VotingController {
 
   /* --------------------------------------------------------------- entries */
 
-  @Public()
+  // Both of these reach the same pitches without the topic wrapper, so they
+  // carry the same rule - otherwise the withheld line-up is one request away.
   @Get('entries')
-  @ApiOperation({ summary: 'List all pitch entries' })
-  listEntries() {
-    return this.votingService.listEntries();
+  @ApiOperation({
+    summary: 'Pitch entries, excluding those on a topic that has not opened',
+  })
+  listEntries(@CurrentUser() user: AuthUser) {
+    return this.votingService.listEntries(user.role === AccessTier.ADMIN);
   }
 
-  @Public()
   @Get('top-pitches')
   @ApiOperation({
-    summary: 'Most-voted pitches across all topics (Overview widget)',
+    summary: 'Most-voted pitches across all open topics (Overview widget)',
   })
-  topPitches() {
-    return this.votingService.topPitches(10);
+  topPitches(@CurrentUser() user: AuthUser) {
+    return this.votingService.topPitches(10, user.role === AccessTier.ADMIN);
   }
 
   @Post('entries')
