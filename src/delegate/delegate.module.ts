@@ -1,3 +1,4 @@
+import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Delegate } from './entities/delegate.entity';
@@ -23,6 +24,9 @@ import { RealtimeModule } from '../common/realtime/realtime.module';
       DelegateBlock,
     ]),
     RealtimeModule,
+    // A connection raises a notification for the other delegate. Queued, not
+    // called: NotificationsService already depends on this module.
+    BullModule.registerQueue({ name: 'notifications' }),
   ],
   controllers: [DelegatesController],
   providers: [DelegatesService, DelegatesGateway, StorageService],

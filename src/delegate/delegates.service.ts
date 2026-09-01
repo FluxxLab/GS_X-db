@@ -26,6 +26,8 @@ import { DirectMessage } from './entities/direct-message.entity';
 import { MessageReaction } from './entities/message-reaction.entity';
 import { DelegateBlock } from './entities/delegate-block.entity';
 import { SendDirectMessageDto } from './dto/send-direct-message.dto';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { RealtimeService, Rooms } from '../common/realtime/realtime.service';
 import { StorageService } from '../common/storage/storage.service';
 
@@ -57,6 +59,8 @@ export class DelegatesService {
     private readonly blocks: Repository<DelegateBlock>,
     private readonly realtime: RealtimeService,
     private readonly storage: StorageService,
+    @InjectQueue('notifications')
+    private readonly notificationsQueue: Queue,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -607,6 +611,9 @@ export class DelegatesService {
       toDelegateId: bId,
     });
 
+    const actor = await this.findById(fromId);
+    const actorName = actor?.name ?? 'A delegate';
+
     if (existing) {
       existing.mutual = true;
       await this.connections.save(existing);
@@ -614,6 +621,13 @@ export class DelegatesService {
         type: 'mutual',
         connectionId: existing.id,
       });
+      // The other side had already added them; this closes the loop, and is
+      // the more welcome of the two to hear about.
+      await this.notifyConnection(
+        toId,
+        'You are now connected',
+        `${actorName} connected back with you.`,
+      );
       return existing;
     }
 
@@ -629,7 +643,40 @@ export class DelegatesService {
       connectionId: conn.id,
       fromDelegateId: fromId,
     });
+    await this.notifyConnection(
+      toId,
+      'New connection',
+      `${actorName} added you to their network.`,
+    );
     return conn;
+  }
+
+  /**
+   * Queued, never awaited into the caller's result: a delegate scanning a QR
+   * pass is waiting on this request, and a slow FCM call or a Redis blip must
+   * not fail a connection that has already been written.
+   *
+   * On the queue rather than through NotificationsService because that service
+   * already depends on this one - calling back the other way would make it a
+   * cycle for the sake of one message.
+   */
+  private async notifyConnection(
+    delegateId: string,
+    title: string,
+    body: string,
+  ): Promise<void> {
+    try {
+      await this.notificationsQueue.add('direct', {
+        delegateId,
+        title,
+        body,
+        category: 'network',
+      });
+    } catch (error) {
+      this.logger.warn(
+        `could not queue connection notification for ${delegateId}: ${(error as Error).message}`,
+      );
+    }
   }
 
   async listConnections(

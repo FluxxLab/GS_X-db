@@ -75,7 +75,12 @@ export class NotificationsService {
         : await this.delegates.segmentsFor(user.id);
 
     return this.notifications.find({
-      where: { segment: In(segments), sentAt: Not(IsNull()) },
+      where: [
+        // broadcasts for the segments this delegate belongs to
+        { segment: In(segments), sentAt: Not(IsNull()), delegateId: IsNull() },
+        // and anything addressed to them personally, whatever its segment
+        { delegateId: user.id, sentAt: Not(IsNull()) },
+      ],
       order: { sentAt: 'DESC' },
       take: 50,
     });
