@@ -95,9 +95,9 @@ export class SessionsService {
    * on a panel is a fact about the line-up we are meant to be withholding. The
    * id is a sentinel rather than a real speaker's - there is no row behind it.
    */
-  private static readonly HIDDEN_SPEAKER_ID = 'tba';
+  static readonly HIDDEN_SPEAKER_ID = 'tba';
 
-  private hiddenSpeaker(): Speaker {
+  hiddenSpeaker(): Speaker {
     return {
       id: SessionsService.HIDDEN_SPEAKER_ID,
       name: SessionsService.HIDDEN_SPEAKER_NAME,
@@ -108,20 +108,16 @@ export class SessionsService {
   }
 
   /**
-   * Applies the reveal rule to sessions on their way out to a caller. A
-   * session with any speakers reports exactly one placeholder; a session with
-   * none still reports none, so an empty slot is not invented.
+   * True when this caller must not be shown speaker identities.
+   *
+   * Redaction itself is not done here any more - SpeakerRevealInterceptor
+   * applies it to every HTTP response, so a new endpoint is covered without
+   * anyone remembering to call anything. This stays for the two decisions the
+   * interceptor cannot make: whether a speaker-only listing returns rows at
+   * all, and whether a query may match on speaker columns.
    */
-  async withSpeakerReveal<T extends { speakers?: Speaker[] | null }>(
-    rows: T[],
-    isAdmin: boolean,
-  ): Promise<T[]> {
-    if (!(await this.mustHideSpeakers(isAdmin))) return rows;
-    return rows.map((row) =>
-      row.speakers?.length
-        ? { ...row, speakers: [this.hiddenSpeaker()] }
-        : row,
-    );
+  async mustHideSpeakersFor(isAdmin: boolean): Promise<boolean> {
+    return this.mustHideSpeakers(isAdmin);
   }
 
   /**
@@ -354,7 +350,9 @@ export class SessionsService {
       )
       .take(limit)
       .getMany();
-    return this.withSpeakerReveal(rows, isAdmin);
+    // The joined speakers are redacted by SpeakerRevealInterceptor on the way
+    // out; what has to happen here is the WHERE, which it cannot reach.
+    return rows;
   }
 
   /**

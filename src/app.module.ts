@@ -6,6 +6,7 @@ import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { RolesGuard } from './common/guards/roles.guard';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { SessionsModule } from './sessions/sessions.module';
+import { SpeakerRevealInterceptor } from './sessions/speaker-reveal.interceptor';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
@@ -78,6 +79,10 @@ import { SearchModule } from './search/search.module';
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
+    // Withholds speaker identities from every response until they are
+    // revealed, so a new endpoint returning a session is covered by default
+    // rather than by someone remembering to redact it.
+    { provide: APP_INTERCEPTOR, useClass: SpeakerRevealInterceptor },
   ],
 })
 export class AppModule {}

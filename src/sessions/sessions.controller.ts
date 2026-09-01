@@ -38,26 +38,24 @@ export class SessionController {
 
   // Not @Public(): speakers are withheld until the organisers reveal them, and
   // that rule needs to know who is asking - a public handler has no user, so
-  // admin could not be exempted from it.
+  // admin could not be exempted from it. The redaction itself is applied by
+  // SpeakerRevealInterceptor, not here.
   @Get()
   @ApiOperation({})
-  async list(@Query() query: QuerySessionsDto, @CurrentUser() user: AuthUser) {
-    const rows = await this.service.list(query);
-    return this.service.withSpeakerReveal(rows, user.role === AccessTier.ADMIN);
+  list(@Query() query: QuerySessionsDto) {
+    return this.service.list(query);
   }
 
   @Get('live')
   @ApiOperation({})
-  async liveNow(@CurrentUser() user: AuthUser) {
-    const rows = await this.service.findLiveNow();
-    return this.service.withSpeakerReveal(rows, user.role === AccessTier.ADMIN);
+  liveNow() {
+    return this.service.findLiveNow();
   }
 
   @Get('saved')
   @ApiOperation({})
-  async saved(@CurrentUser() user: AuthUser) {
-    const rows = await this.service.savedSessions(user.id);
-    return this.service.withSpeakerReveal(rows, user.role === AccessTier.ADMIN);
+  saved(@CurrentUser() user: AuthUser) {
+    return this.service.savedSessions(user.id);
   }
 
   /**
@@ -80,16 +78,8 @@ export class SessionController {
 
   @Get(':id')
   @ApiOperation({})
-  async findOne(
-    @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: AuthUser,
-  ) {
-    const session = await this.service.findById(id);
-    const [redacted] = await this.service.withSpeakerReveal(
-      [session],
-      user.role === AccessTier.ADMIN,
-    );
-    return redacted;
+  findOne(@Param('id', ParseUUIDPipe) id: string) {
+    return this.service.findById(id);
   }
 
   @Post()

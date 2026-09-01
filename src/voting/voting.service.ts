@@ -196,23 +196,39 @@ export class VotingService {
     id: string,
     dto: UpdatePitchEntryDto,
   ): Promise<PitchEntry & { voteCount: number }> {
-    const entry = await this.entries.findOneBy({ id });
-    if (!entry) throw new NotFoundException('Pitch entry not found');
+    const moving = Boolean(dto.topicId);
 
-    if (dto.topicId && dto.topicId !== entry.topicId) {
-      const target = await this.topics.findOneBy({ id: dto.topicId });
-      if (!target) throw new NotFoundException('Target topic not found');
+    // A move is checked and applied under one lock. Counting the votes and
+    // then saving as two statements leaves a window: a ballot cast between
+    // them passes a check that was already stale, and the vote lands on a
+    // pitch that is no longer in the topic it was cast for. An edit that is
+    // not a move touches nothing votes depend on, so it skips the lock.
+    const { saved, voteCount } = await this.dataSource.transaction(
+      async (tx) => {
+        const entry = moving
+          ? await tx.findOne(PitchEntry, {
+              where: { id },
+              lock: { mode: 'pessimistic_write' },
+            })
+          : await tx.findOneBy(PitchEntry, { id });
+        if (!entry) throw new NotFoundException('Pitch entry not found');
 
-      const cast = await this.votes.countBy({ entryId: id });
-      if (cast > 0)
-        throw new ConflictException(
-          'This pitch already holds votes and can no longer be moved to another topic',
-        );
-    }
+        if (dto.topicId && dto.topicId !== entry.topicId) {
+          const target = await tx.findOneBy(PitchTopic, { id: dto.topicId });
+          if (!target) throw new NotFoundException('Target topic not found');
 
-    Object.assign(entry, dto);
-    const saved = await this.entries.save(entry);
-    const voteCount = await this.votes.countBy({ entryId: id });
+          const cast = await tx.countBy(PitchVote, { entryId: id });
+          if (cast > 0)
+            throw new ConflictException(
+              'This pitch already holds votes and can no longer be moved to another topic',
+            );
+        }
+
+        Object.assign(entry, dto);
+        const row = await tx.save(entry);
+        return { saved: row, voteCount: await tx.countBy(PitchVote, { entryId: id }) };
+      },
+    );
 
     // Same rule as the topic broadcast: this payload is the pitch itself -
     // innovator, country, description - so it must not reach the voting room
