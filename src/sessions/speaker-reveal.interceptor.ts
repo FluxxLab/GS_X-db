@@ -42,11 +42,14 @@ export class SpeakerRevealInterceptor implements NestInterceptor {
     }>();
     const isAdmin = request?.user?.role === AccessTier.ADMIN;
 
+    // `data` is typed as unknown rather than left as the handler's `any`, so
+    // the walk below cannot silently dereference something untyped.
     return next.handle().pipe(
-      mergeMap((data) =>
+      mergeMap((data: unknown) =>
         from(
-          (async () => {
-            if (isAdmin || (await this.sessions.speakersRevealed())) return data;
+          (async (): Promise<unknown> => {
+            if (isAdmin || (await this.sessions.speakersRevealed()))
+              return data;
             return this.redact(data, 0);
           })(),
         ),

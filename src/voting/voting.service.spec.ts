@@ -15,16 +15,15 @@ import { VotingService } from './voting.service';
  * tally - so nothing but a test reports them.
  */
 describe('VotingService withholding rules', () => {
-  const topic = (id: string, voting: TopicVoting): PitchTopic =>
-    ({
-      id,
-      name: `topic-${id}`,
-      position: 0,
-      voting,
-      result: null,
-      closedAt: null,
-      createdAt: new Date(),
-    }) as PitchTopic;
+  const topic = (id: string, voting: TopicVoting): PitchTopic => ({
+    id,
+    name: `topic-${id}`,
+    position: 0,
+    voting,
+    result: null,
+    closedAt: null,
+    createdAt: new Date(),
+  });
 
   const entry = (id: string, topicId: string): PitchEntry =>
     ({ id, topicId, innovatorName: `pitch-${id}` }) as PitchEntry;
@@ -32,7 +31,11 @@ describe('VotingService withholding rules', () => {
   let service: VotingService;
   let entries: { find: jest.Mock; findOneBy: jest.Mock; save: jest.Mock };
   let topics: { find: jest.Mock; findOneBy: jest.Mock; save: jest.Mock };
-  let votes: { countBy: jest.Mock; find: jest.Mock; createQueryBuilder: jest.Mock };
+  let votes: {
+    countBy: jest.Mock;
+    find: jest.Mock;
+    createQueryBuilder: jest.Mock;
+  };
   let realtime: { emitToRoom: jest.Mock };
   let tx: {
     findOne: jest.Mock;
@@ -54,7 +57,7 @@ describe('VotingService withholding rules', () => {
       findOne: jest.fn(),
       findOneBy: jest.fn(),
       countBy: jest.fn().mockResolvedValue(0),
-      save: jest.fn(async (row: unknown) => row),
+      save: jest.fn((row: unknown) => Promise.resolve(row)),
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -78,7 +81,10 @@ describe('VotingService withholding rules', () => {
     // allCounts() is private and hits the query builder; the standings are not
     // what these tests are about.
     jest
-      .spyOn(service as unknown as { allCounts: () => Promise<Map<string, number>> }, 'allCounts')
+      .spyOn(
+        service as unknown as { allCounts: () => Promise<Map<string, number>> },
+        'allCounts',
+      )
       .mockResolvedValue(new Map());
   });
 
@@ -106,7 +112,11 @@ describe('VotingService withholding rules', () => {
 
     it('gives admin every topic, since admin curates them', async () => {
       const result = await service.listTopics(true);
-      expect(result.map((t) => t.id)).toEqual(['open-1', 'pending-1', 'closed-1']);
+      expect(result.map((t) => t.id)).toEqual([
+        'open-1',
+        'pending-1',
+        'closed-1',
+      ]);
     });
   });
 

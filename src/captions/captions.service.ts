@@ -430,7 +430,8 @@ export class CaptionsService implements OnModuleDestroy {
     // The job persists what it translates and pushes each line out on this
     // language's caption room, so the history arrives on the open screen a
     // moment later instead of holding the response hostage.
-    if (language !== 'en') void this.queueTranslationGapFill(sessionId, language);
+    if (language !== 'en')
+      void this.queueTranslationGapFill(sessionId, language);
 
     return rows
       .reverse()

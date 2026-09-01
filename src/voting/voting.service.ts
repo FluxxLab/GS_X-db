@@ -226,7 +226,10 @@ export class VotingService {
 
         Object.assign(entry, dto);
         const row = await tx.save(entry);
-        return { saved: row, voteCount: await tx.countBy(PitchVote, { entryId: id }) };
+        return {
+          saved: row,
+          voteCount: await tx.countBy(PitchVote, { entryId: id }),
+        };
       },
     );
 

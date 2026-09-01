@@ -39,7 +39,9 @@ describe('SpeakerRevealInterceptor', () => {
   ) => {
     const context = {
       getType: () => 'http',
-      switchToHttp: () => ({ getRequest: () => ({ user: role ? { role } : undefined }) }),
+      switchToHttp: () => ({
+        getRequest: () => ({ user: role ? { role } : undefined }),
+      }),
     } as unknown as ExecutionContext;
     const next: CallHandler = { handle: () => of(payload) };
     return firstValueFrom(interceptor.intercept(context, next));
@@ -83,13 +85,17 @@ describe('SpeakerRevealInterceptor', () => {
 
   it('leaves a session with no speakers alone rather than inventing a slot', async () => {
     const payload = [{ id: 's1', title: 'Break', speakers: [] }];
-    const result = (await run(build(false), payload)) as { speakers: unknown[] }[];
+    const result = (await run(build(false), payload)) as {
+      speakers: unknown[];
+    }[];
     expect(result[0].speakers).toEqual([]);
   });
 
   it('redacts speakers nested below the top level', async () => {
     const result = (await run(build(false), {
-      data: { sessions: [{ speakers: [speaker('a', 'Prof. Chimezie Anyakora')] }] },
+      data: {
+        sessions: [{ speakers: [speaker('a', 'Prof. Chimezie Anyakora')] }],
+      },
     })) as { data: { sessions: { speakers: { name: string }[] }[] } };
 
     expect(result.data.sessions[0].speakers[0].name).toBe('To be announced');
@@ -108,15 +114,19 @@ describe('SpeakerRevealInterceptor', () => {
   });
 
   it('does not consult the flag for an admin request', async () => {
+    // held separately rather than read back off the object: asserting on
+    // `sessions.speakersRevealed` passes an unbound method, which the lint
+    // rules reject.
+    const speakersRevealed = jest.fn().mockResolvedValue(false);
     const sessions = {
-      speakersRevealed: jest.fn().mockResolvedValue(false),
+      speakersRevealed,
       hiddenSpeaker: () => ({ id: 'tba', name: 'To be announced' }),
     } as unknown as SessionsService;
     const interceptor = new SpeakerRevealInterceptor(sessions);
 
     await run(interceptor, [{ speakers: [] }], AccessTier.ADMIN);
 
-    expect(sessions.speakersRevealed).not.toHaveBeenCalled();
+    expect(speakersRevealed).not.toHaveBeenCalled();
   });
 
   it('survives a payload that is not an object', async () => {
