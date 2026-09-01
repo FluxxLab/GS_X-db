@@ -20,6 +20,7 @@ import { join } from 'node:path';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { CaptionLanguage } from './translation/languages';
+import { maskProfanity } from './profanity';
 import { dropVerdicts } from './translation/verdict-filter';
 import { TRANSLATION_PROVIDER } from './translation/translation.interface';
 import type {
@@ -233,7 +234,10 @@ export class CaptionsService implements OnModuleDestroy {
 
     this.realtime.emitToRoom(Rooms.caption(session.id), 'caption', {
       sessionId: session.id,
-      text: event.text,
+      // Second pass over Deepgram's own filter - see profanity.ts. The row
+      // saved above keeps whatever Deepgram returned; only what reaches a
+      // screen is masked again here.
+      text: maskProfanity(event.text),
       isFinal: event.isFinal,
       aiGenerated: true,
       language: CaptionLanguage.EN,
@@ -337,7 +341,9 @@ export class CaptionsService implements OnModuleDestroy {
           'caption',
           {
             sessionId,
-            text: translated,
+            // Translations are generated after Deepgram has finished, so this
+            // pass is the only thing that ever looks at them.
+            text: maskProfanity(translated),
             isFinal: true,
             aiGenerated: true,
             language,
@@ -435,7 +441,11 @@ export class CaptionsService implements OnModuleDestroy {
 
     return rows
       .reverse()
-      .map((r) => ({ text: r.text, speaker: r.speaker, at: r.createdAt }));
+      .map((r) => ({
+        text: maskProfanity(r.text),
+        speaker: r.speaker,
+        at: r.createdAt,
+      }));
   }
 
   /**
@@ -569,7 +579,7 @@ export class CaptionsService implements OnModuleDestroy {
     for (const row of saved) {
       this.realtime.emitToRoom(Rooms.caption(sessionId, language), 'caption', {
         sessionId,
-        text: row.text,
+        text: maskProfanity(row.text),
         isFinal: true,
         // Backfill, not something just said - the client uses this to append
         // to the history rather than the live thread.

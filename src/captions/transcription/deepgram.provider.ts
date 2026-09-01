@@ -103,6 +103,9 @@ export class DeepTranscriptionProvider implements TranscriptionProvider {
         model: 'nova-3',
         language: 'en',
         smart_format: true,
+        // Masked at the source here too, so the archive pass cannot restore
+        // words the live captions had already removed.
+        profanity_filter: true,
         diarize_model: 'v2',
         utterances: true,
         keyterm: opts.keywords,
@@ -130,6 +133,11 @@ export class DeepTranscriptionProvider implements TranscriptionProvider {
       language: 'en',
       smart_format: 'true',
       interim_results: 'true',
+      // Deepgram masks what it recognises before the text reaches us, so the
+      // stored transcript is masked as well and the real words are not
+      // recoverable afterwards. A second pass in profanity.ts covers what this
+      // list does not know, Nigerian slang in particular.
+      profanity_filter: 'true',
       keyterm: opts.keywords,
       // v1 is the only diarisation model streaming accepts; v2 is batch-only
       // and returns a validation error here. Omitted entirely for a
