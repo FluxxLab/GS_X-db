@@ -87,6 +87,8 @@ export class CaptionsService implements OnModuleDestroy {
     private readonly translation: TranslationProvider,
     @InjectQueue('captions-archive')
     private readonly archiveQueue: Queue,
+    @InjectQueue('caption-gapfill')
+    private readonly gapfillQueue: Queue,
     private readonly session: SessionsService,
     private readonly realtime: RealtimeService,
     @Inject(REDIS)
@@ -421,22 +423,46 @@ export class CaptionsService implements OnModuleDestroy {
       take: limit,
     });
 
-    if (language !== 'en') {
-      const filled = await this.fillTranslationGaps(sessionId, language, rows);
-      if (filled.length > 0) rows.push(...filled);
-      rows.sort(
-        (a, b) =>
-          (a.offsetMs ?? 0) - (b.offsetMs ?? 0) ||
-          a.createdAt.getTime() - b.createdAt.getTime(),
-      );
-      return rows
-        .slice(-limit)
-        .map((r) => ({ text: r.text, speaker: r.speaker, at: r.createdAt }));
-    }
+    // A translation this language is missing gets filled in the background,
+    // never in this request. Filling it here meant a delegate's catch-up call
+    // waited on a dozen Claude round-trips: the calls timed out, nothing was
+    // persisted, and the next reader asked for exactly the same work again.
+    // The job persists what it translates and pushes each line out on this
+    // language's caption room, so the history arrives on the open screen a
+    // moment later instead of holding the response hostage.
+    if (language !== 'en') void this.queueTranslationGapFill(sessionId, language);
 
     return rows
       .reverse()
       .map((r) => ({ text: r.text, speaker: r.speaker, at: r.createdAt }));
+  }
+
+  /**
+   * One job per session and language at a time. The jobId is the dedupe: five
+   * delegates opening the same session in Hausa queue one fill between them,
+   * not five identical ones racing to translate the same rows.
+   */
+  private async queueTranslationGapFill(
+    sessionId: string,
+    language: string,
+  ): Promise<void> {
+    try {
+      await this.gapfillQueue.add(
+        'fill',
+        { sessionId, language },
+        {
+          jobId: `gapfill:${sessionId}:${language}`,
+          removeOnComplete: true,
+          removeOnFail: true,
+        },
+      );
+    } catch (error) {
+      // Catch-up still returns what exists; a queue that is down must not turn
+      // a readable history into a failed request.
+      this.logger.warn(
+        `could not queue ${language} gap-fill for ${sessionId}: ${(error as Error).message}`,
+      );
+    }
   }
 
   /**
@@ -453,24 +479,34 @@ export class CaptionsService implements OnModuleDestroy {
    * how many delegates read it afterwards. The service-level cache in
    * translate() usually absorbs even that.
    *
+   * Runs on the caption-gapfill queue, never on the request that triggered it
+   * - see recentCaptions. Each line it saves is emitted on that language's
+   * caption room, so a delegate already looking at the screen watches the
+   * history fill in rather than having to reopen it.
+   *
    * Bounded deliberately: only the most recent GAP_FILL_MAX lines, a few at a
-   * time. This runs inside a delegate's HTTP request, and the thread of what
-   * is being said now is worth more to them than a complete morning that
-   * arrives after the request times out.
+   * time. The thread of what is being said now is worth more than a complete
+   * morning that costs a hundred translate calls to assemble.
    */
   private static readonly GAP_FILL_MAX = 12;
   private static readonly GAP_FILL_CONCURRENCY = 4;
 
-  private async fillTranslationGaps(
+  async fillTranslationGaps(
     sessionId: string,
     language: string,
-    existing: TranscriptSegment[],
   ): Promise<TranscriptSegment[]> {
-    const english = await this.segments.find({
-      where: { sessionId, language: 'en' },
-      order: { offsetMs: 'DESC', createdAt: 'DESC' },
-      take: 60,
-    });
+    const [english, existing] = await Promise.all([
+      this.segments.find({
+        where: { sessionId, language: 'en' },
+        order: { offsetMs: 'DESC', createdAt: 'DESC' },
+        take: 60,
+      }),
+      this.segments.find({
+        where: { sessionId, language },
+        order: { offsetMs: 'DESC', createdAt: 'DESC' },
+        take: 60,
+      }),
+    ]);
     if (english.length === 0) return [];
 
     const translated = new Set(
@@ -521,6 +557,26 @@ export class CaptionsService implements OnModuleDestroy {
         }),
       );
       saved.push(...results.filter((r): r is TranscriptSegment => r !== null));
+    }
+
+    // Oldest first, so a screen appending them reads in the order it was said.
+    saved.sort(
+      (a, b) =>
+        (a.offsetMs ?? 0) - (b.offsetMs ?? 0) ||
+        a.createdAt.getTime() - b.createdAt.getTime(),
+    );
+    for (const row of saved) {
+      this.realtime.emitToRoom(Rooms.caption(sessionId, language), 'caption', {
+        sessionId,
+        text: row.text,
+        isFinal: true,
+        // Backfill, not something just said - the client uses this to append
+        // to the history rather than the live thread.
+        backfill: true,
+        aiGenerated: true,
+        language,
+        speaker: row.speaker,
+      });
     }
     return saved;
   }

@@ -6,6 +6,7 @@ import { SessionsModule } from '../sessions/sessions.module';
 import { CaptionsController } from './captions.controller';
 import { CaptionsGateway } from './captions.gateway';
 import { CaptionsArchiveProcessor } from './captions-archive.processor';
+import { CaptionsGapfillProcessor } from './captions-gapfill.processor';
 import { CaptionsService } from './captions.service';
 import { LivekitService } from './livekit.service';
 import { TranscriptSegment } from './entities/transcript-segment.entity';
@@ -22,12 +23,16 @@ import { TRANSLATION_PROVIDER } from './translation/translation.interface';
     SessionsModule,
     // Re-transcription runs for minutes; it cannot sit on the socket handler.
     BullModule.registerQueue({ name: 'captions-archive' }),
+    // Translating a language's missing lines costs a dozen Claude calls; it
+    // cannot sit on a delegate's catch-up request.
+    BullModule.registerQueue({ name: 'caption-gapfill' }),
   ],
   controllers: [CaptionsController],
   providers: [
     CaptionsService,
     CaptionsGateway,
     CaptionsArchiveProcessor,
+    CaptionsGapfillProcessor,
     LivekitService,
     {
       provide: TRANSCRIPTION_PROVIDER,
