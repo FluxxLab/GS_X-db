@@ -36,24 +36,28 @@ import { Audit } from 'src/common/decorators/audit.decorator';
 export class SessionController {
   constructor(private readonly service: SessionsService) {}
 
-  @Public()
+  // Not @Public(): speakers are withheld until the organisers reveal them, and
+  // that rule needs to know who is asking - a public handler has no user, so
+  // admin could not be exempted from it.
   @Get()
   @ApiOperation({})
-  list(@Query() query: QuerySessionsDto) {
-    return this.service.list(query);
+  async list(@Query() query: QuerySessionsDto, @CurrentUser() user: AuthUser) {
+    const rows = await this.service.list(query);
+    return this.service.withSpeakerReveal(rows, user.role === AccessTier.ADMIN);
   }
 
-  @Public()
   @Get('live')
   @ApiOperation({})
-  liveNow() {
-    return this.service.findLiveNow();
+  async liveNow(@CurrentUser() user: AuthUser) {
+    const rows = await this.service.findLiveNow();
+    return this.service.withSpeakerReveal(rows, user.role === AccessTier.ADMIN);
   }
 
   @Get('saved')
   @ApiOperation({})
-  saved(@CurrentUser() user: AuthUser) {
-    return this.service.savedSessions(user.id);
+  async saved(@CurrentUser() user: AuthUser) {
+    const rows = await this.service.savedSessions(user.id);
+    return this.service.withSpeakerReveal(rows, user.role === AccessTier.ADMIN);
   }
 
   /**
@@ -74,11 +78,18 @@ export class SessionController {
     return this.service.tracks();
   }
 
-  @Public()
   @Get(':id')
   @ApiOperation({})
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.service.findById(id);
+  async findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const session = await this.service.findById(id);
+    const [redacted] = await this.service.withSpeakerReveal(
+      [session],
+      user.role === AccessTier.ADMIN,
+    );
+    return redacted;
   }
 
   @Post()

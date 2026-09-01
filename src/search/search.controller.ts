@@ -7,6 +7,9 @@ import {
 } from '@nestjs/swagger';
 import { QuerySearchDto } from './dto/query-search.dto';
 import { SearchService } from './search.service';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { AccessTier } from '../delegate/entities/delegate.entity';
+import type { AuthUser } from '../auth/strategies/jwt.stategies';
 
 @ApiTags('Search')
 @Controller('search')
@@ -25,7 +28,7 @@ export class SearchController {
     description: 'Group Results: {sessions, speakers, delegates',
   })
   @ApiResponse({ status: 400, description: 'q shorter than 2 characters' })
-  search(@Query() dto: QuerySearchDto) {
-    return this.service.search(dto);
+  search(@Query() dto: QuerySearchDto, @CurrentUser() user: AuthUser) {
+    return this.service.search(dto, user.role === AccessTier.ADMIN);
   }
 }

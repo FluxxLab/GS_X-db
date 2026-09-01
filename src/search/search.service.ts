@@ -10,13 +10,13 @@ export class SearchService {
     private readonly session: SessionsService,
   ) {}
 
-  async search(dto: QuerySearchDto) {
+  async search(dto: QuerySearchDto, isAdmin = false) {
     const q = this.escapeLike(dto.q);
     const limit = dto.limit ?? 10;
 
     const [sessions, speakers, delegates] = await Promise.all([
-      this.session.searchSessions(q, limit),
-      this.session.searchSpeakers(q, limit),
+      this.session.searchSessions(q, limit, isAdmin),
+      this.session.searchSpeakers(q, limit, isAdmin),
       this.delegate.searchDelegates(q, limit),
     ]);
 

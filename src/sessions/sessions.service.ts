@@ -1,10 +1,13 @@
 import {
   ConflictException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import Redis from 'ioredis';
 import { In, Repository } from 'typeorm';
+import { REDIS } from '../common/redis/redis.module';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { QuerySessionsDto } from './dto/query-sessions.dto';
 import { UpdateSessionDto } from './dto/update-session.dto';
@@ -43,7 +46,74 @@ export class SessionsService {
     private readonly transcripts: Repository<TranscriptSegment>,
 
     private readonly realtime: RealtimeService,
+
+    @Inject(REDIS)
+    private readonly redis: Redis,
   ) {}
+
+  /* --------------------------------------------- speaker reveal (FR-02/03) */
+
+  /**
+   * One global switch, off until the organisers throw it: while it is off no
+   * delegate surface gives up a speaker's name, role, organisation or photo.
+   *
+   * Redis rather than a column because it is operational state, not program
+   * data - it survives a restart, is shared across API instances, and flipping
+   * it is a one-key write on the day rather than a migration.
+   */
+  private static readonly REVEAL_KEY = 'summit:speakers:revealed';
+
+  /** What a delegate sees in a speaker's place before the reveal. */
+  static readonly HIDDEN_SPEAKER_NAME = 'To be announced';
+
+  async speakersRevealed(): Promise<boolean> {
+    return (await this.redis.get(SessionsService.REVEAL_KEY)) === '1';
+  }
+
+  async setSpeakersRevealed(revealed: boolean): Promise<{ revealed: boolean }> {
+    await this.redis.set(SessionsService.REVEAL_KEY, revealed ? '1' : '0');
+    // Global, not per-session: the flag is the whole program's, and a delegate
+    // sitting on any screen should see the line-up appear without relaunching.
+    this.realtime.emitGlobal('speakers:revealed', { revealed });
+    return { revealed };
+  }
+
+  /**
+   * True when this caller must not be shown speaker identities. Admin is
+   * exempt - they are the ones building the line-up.
+   */
+  private async mustHideSpeakers(isAdmin: boolean): Promise<boolean> {
+    if (isAdmin) return false;
+    return !(await this.speakersRevealed());
+  }
+
+  /**
+   * The whole identity goes, not just the name: an organisation and a photo
+   * name a person as surely as their name does. The id stays so the client can
+   * still key the row.
+   */
+  private redactSpeaker(speaker: Speaker): Speaker {
+    return {
+      ...speaker,
+      name: SessionsService.HIDDEN_SPEAKER_NAME,
+      role: null,
+      organisation: null,
+      avatarUrl: null,
+    };
+  }
+
+  /** Applies the reveal rule to sessions on their way out to a caller. */
+  async withSpeakerReveal<T extends { speakers?: Speaker[] | null }>(
+    rows: T[],
+    isAdmin: boolean,
+  ): Promise<T[]> {
+    if (!(await this.mustHideSpeakers(isAdmin))) return rows;
+    return rows.map((row) =>
+      row.speakers?.length
+        ? { ...row, speakers: row.speakers.map((s) => this.redactSpeaker(s)) }
+        : row,
+    );
+  }
 
   /**
    * Derived from the enum rather than written out again, so this can never
@@ -255,18 +325,40 @@ export class SessionsService {
     });
   }
 
-  searchSessions(q: string, limit: number = 10): Promise<Session[]> {
-    return this.sessions
+  async searchSessions(
+    q: string,
+    limit: number = 10,
+    isAdmin = false,
+  ): Promise<Session[]> {
+    const hide = await this.mustHideSpeakers(isAdmin);
+    const rows = await this.sessions
       .createQueryBuilder('s')
       .leftJoinAndSelect('s.speakers', 'sp') // ← missing line; creates the `sp` alias
-      .where('s.title ILIKE :q OR s.description ILIKE :q OR sp.role ILIKE :q', {
-        q: `%${q}%`,
-      })
+      // While speakers are hidden the speaker columns drop out of the WHERE
+      // too: matching a session on its speaker's role would let a delegate
+      // find out who is on it by guessing, which is the thing being withheld.
+      .where(
+        hide
+          ? 's.title ILIKE :q OR s.description ILIKE :q'
+          : 's.title ILIKE :q OR s.description ILIKE :q OR sp.role ILIKE :q',
+        { q: `%${q}%` },
+      )
       .take(limit)
       .getMany();
+    return this.withSpeakerReveal(rows, isAdmin);
   }
 
-  searchSpeakers(q: string, limit: number): Promise<Speaker[]> {
+  /**
+   * Before the reveal this returns nothing at all rather than placeholders:
+   * the query itself is the leak. Searching a name and getting one "To be
+   * announced" back confirms that person is speaking.
+   */
+  async searchSpeakers(
+    q: string,
+    limit: number,
+    isAdmin = false,
+  ): Promise<Speaker[]> {
+    if (await this.mustHideSpeakers(isAdmin)) return [];
     return this.speakers
       .createQueryBuilder('s')
       .where('s.name ILIKE :q OR s.organisation ILIKE :q OR s.role ILIKE :q', {
@@ -285,7 +377,9 @@ export class SessionsService {
     return { live, scheduled, completed };
   }
 
-  listSpeakers(): Promise<Speaker[]> {
+  /** Empty for delegates before the reveal - see searchSpeakers. */
+  async listSpeakers(isAdmin = false): Promise<Speaker[]> {
+    if (await this.mustHideSpeakers(isAdmin)) return [];
     return this.speakers.find({ order: { name: 'ASC' } });
   }
 
