@@ -88,13 +88,18 @@ export class SessionsService {
   }
 
   /**
-   * The whole identity goes, not just the name: an organisation and a photo
-   * name a person as surely as their name does. The id stays so the client can
-   * still key the row.
+   * The single placeholder a session's whole line-up collapses into.
+   *
+   * One entry, never one per speaker: redacting each speaker in place would
+   * still publish how many there are, and "four speakers, all to be announced"
+   * on a panel is a fact about the line-up we are meant to be withholding. The
+   * id is a sentinel rather than a real speaker's - there is no row behind it.
    */
-  private redactSpeaker(speaker: Speaker): Speaker {
+  private static readonly HIDDEN_SPEAKER_ID = 'tba';
+
+  private hiddenSpeaker(): Speaker {
     return {
-      ...speaker,
+      id: SessionsService.HIDDEN_SPEAKER_ID,
       name: SessionsService.HIDDEN_SPEAKER_NAME,
       role: null,
       organisation: null,
@@ -102,7 +107,11 @@ export class SessionsService {
     };
   }
 
-  /** Applies the reveal rule to sessions on their way out to a caller. */
+  /**
+   * Applies the reveal rule to sessions on their way out to a caller. A
+   * session with any speakers reports exactly one placeholder; a session with
+   * none still reports none, so an empty slot is not invented.
+   */
   async withSpeakerReveal<T extends { speakers?: Speaker[] | null }>(
     rows: T[],
     isAdmin: boolean,
@@ -110,7 +119,7 @@ export class SessionsService {
     if (!(await this.mustHideSpeakers(isAdmin))) return rows;
     return rows.map((row) =>
       row.speakers?.length
-        ? { ...row, speakers: row.speakers.map((s) => this.redactSpeaker(s)) }
+        ? { ...row, speakers: [this.hiddenSpeaker()] }
         : row,
     );
   }
