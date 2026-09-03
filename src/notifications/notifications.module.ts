@@ -8,9 +8,11 @@ import { Notification } from './entities/notification.entity';
 import { NotificationsController } from './notifications.controller';
 import { NotificationsProcessor } from './notifications.processor';
 import { NotificationsService } from './notifications.service';
+import { ApnsPushSender } from './push/apns-push.sender';
 import { FcmPushSender } from './push/fcm-push.sender';
 import { LogPushSender } from './push/log-push.sender';
 import { PUSH_SENDER } from './push/push-sender.interface';
+import { RoutingPushSender } from './push/routing-push.sender';
 import { EMAIL_SENDER } from './email/email-sender.interface';
 import { LogEmailSender } from './email/log-email.sender';
 import { SmtpEmailSender } from './email/smtp-email.sender';
@@ -89,10 +91,19 @@ function hasAllTermii(config: ConfigService): boolean {
     {
       provide: PUSH_SENDER,
       inject: [ConfigService],
-      useFactory: (config: ConfigService) =>
-        config.get('FIREBASE_PROJECT_ID')
+      useFactory: (config: ConfigService) => {
+        // iOS registers a raw APNs token and Android an FCM one, so a
+        // deployment that wants both needs both senders behind the router.
+        const fcm = config.get('FIREBASE_PROJECT_ID')
           ? new FcmPushSender(config)
-          : new LogPushSender(),
+          : null;
+        const apns = config.get('APNS_KEY') ? new ApnsPushSender(config) : null;
+
+        if (fcm && apns) return new RoutingPushSender(apns, fcm);
+        // Either alone still delivers to its own platform and silently drops
+        // the other, which is what a half-configured environment gets today.
+        return fcm ?? apns ?? new LogPushSender();
+      },
     },
     {
       provide: EMAIL_SENDER,

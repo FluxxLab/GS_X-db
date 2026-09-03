@@ -19,7 +19,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
-import { CaptionLanguage } from './translation/languages';
+import { CaptionLanguage, TRANSLATION_TARGETS } from './translation/languages';
 import { maskProfanity } from './profanity';
 import { dropVerdicts } from './translation/verdict-filter';
 import { TRANSLATION_PROVIDER } from './translation/translation.interface';
@@ -418,6 +418,35 @@ export class CaptionsService implements OnModuleDestroy {
    * morning. Returned oldest-first so the client can prepend it to the live
    * feed without re-sorting.
    */
+  /**
+   * Wipe a session's caption rows. Live-ops escape hatch for the summit: a
+   * capture feed pointed at the wrong room, or a stretch of transcript that
+   * should not stand, has to be removable in the moment without a database
+   * console.
+   *
+   * Destructive and total. Captions and the stored transcript are the same
+   * rows (TranscriptSegment), so this clears the archive and the export for
+   * that session too - there is no soft delete to recover from.
+   *
+   * Every language room is notified, not just the one the admin was watching:
+   * a delegate reading Hausa is looking at rows derived from the same audio,
+   * and leaving their screen populated would be worse than clearing nothing.
+   */
+  async clearCaptions(sessionId: string): Promise<{ deleted: number }> {
+    const { affected } = await this.segments.delete({ sessionId });
+
+    for (const language of [CaptionLanguage.EN, ...TRANSLATION_TARGETS]) {
+      this.realtime.emitToRoom(Rooms.caption(sessionId, language), 'captions:cleared', {
+        sessionId,
+      });
+    }
+
+    this.logger.warn(
+      `captions cleared for session ${sessionId}: ${affected ?? 0} row(s) deleted`,
+    );
+    return { deleted: affected ?? 0 };
+  }
+
   async recentCaptions(
     sessionId: string,
     language = 'en',

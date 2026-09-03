@@ -1,5 +1,6 @@
 import {
   Controller,
+  Delete,
   Get,
   NotFoundException,
   Param,
@@ -108,6 +109,22 @@ export class CaptionsController {
     @Query('language') language?: string,
   ) {
     return this.captions.recentCaptions(sessionId, language ?? 'en');
+  }
+
+  @Delete(':sessionId/captions')
+  @Roles(AccessTier.ADMIN)
+  @Audit({
+    type: 'captions_cleared',
+    description: 'Session captions cleared',
+    severity: EventSeverity.WARNING,
+  })
+  @ApiOperation({
+    summary:
+      "Clear a session's captions (admin, audited). Also removes the stored transcript for that session - the rows are the same.",
+  })
+  @ApiResponse({ status: 200, description: 'Number of rows deleted' })
+  async clearCaptions(@Param('sessionId', ParseUUIDPipe) sessionId: string) {
+    return this.captions.clearCaptions(sessionId);
   }
 
   @Get(':sessionId/transcript/export')

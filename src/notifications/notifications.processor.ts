@@ -66,10 +66,9 @@ export class NotificationsProcessor extends WorkerHost {
      */
     const delegateIds = await this.delegate.idsForSegment(notification.segment);
 
+    // kept as entities, not bare strings: the sender routes on `platform`
     const tokens = delegateIds.length
-      ? (await this.deviceTokens.findBy({ delegateId: In(delegateIds) })).map(
-          (t) => t.token,
-        )
+      ? await this.deviceTokens.findBy({ delegateId: In(delegateIds) })
       : [];
 
     /**
@@ -130,9 +129,9 @@ export class NotificationsProcessor extends WorkerHost {
       }),
     );
 
-    const tokens = (
-      await this.deviceTokens.findBy({ delegateId: data.delegateId })
-    ).map((t) => t.token);
+    const tokens = await this.deviceTokens.findBy({
+      delegateId: data.delegateId,
+    });
 
     if (tokens.length === 0) {
       // Expected in Expo Go and for anyone who declined the permission - the
