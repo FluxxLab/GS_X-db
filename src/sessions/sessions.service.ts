@@ -24,6 +24,8 @@ import { Speaker } from './entities/speaker.entity';
 import { SessionComment } from '../discussions/entities/session-comment.entity';
 import { TranscriptSegment } from '../captions/entities/transcript-segment.entity';
 import { RealtimeService, Rooms } from 'src/common/realtime/realtime.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { AudienceSegment } from '../notifications/entities/notification.entity';
 
 @Injectable()
 export class SessionsService {
@@ -52,7 +54,9 @@ export class SessionsService {
 
     @Inject(REDIS)
     private readonly redis: Redis,
-  ) { }
+
+    private readonly notifications: NotificationsService,
+  ) {}
 
   /* --------------------------------------------- speaker reveal (FR-02/03) */
 
@@ -236,8 +240,8 @@ export class SessionsService {
       endsAt: new Date(dto.endsAt),
       speakers: speakerIds?.length
         ? await this.speakers.findBy({
-          id: In(speakerIds),
-        })
+            id: In(speakerIds),
+          })
         : [],
     });
     const saved = await this.sessions.save(session);
@@ -383,9 +387,30 @@ export class SessionsService {
 
   async setStatus(id: string, status: SessionStatus): Promise<Session> {
     const session = await this.findById(id);
+    const wentLive =
+      status === SessionStatus.LIVE && session.status !== SessionStatus.LIVE;
     session.status = status;
 
     const saved = await this.sessions.save(session);
+
+    // Going live is the one status change delegates with the app closed
+    // need to hear about (FR-08). Everyone gets it - the organisers asked
+    // for a broadcast, not a bookmark-only nudge. Queued, not awaited: the
+    // push goes out from the worker, and a failure to queue it must not
+    // fail the status change the operator just made.
+    if (wentLive) {
+      void this.notifications
+        .announce({
+          title: saved.title,
+          body: `Now live in ${saved.room}`,
+          segment: AudienceSegment.ALL,
+          category: 'session-live',
+        })
+        .catch((e) =>
+          this.logger.warn(`live push not queued for "${saved.title}": ${e}`),
+        );
+    }
+
     this.realtime.emitToRoom(Rooms.session(id), 'session:status', {
       sessionId: id,
       status,

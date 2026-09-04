@@ -131,6 +131,13 @@ function hasAllTermii(config: ConfigService): boolean {
       },
     },
   ],
-  exports: [EMAIL_SENDER, SMS_SENDER, NotificationsGateway],
+  // NotificationsService is the door other domains knock on to send a push:
+  // sessions announces a session going live through it.
+  exports: [
+    EMAIL_SENDER,
+    SMS_SENDER,
+    NotificationsGateway,
+    NotificationsService,
+  ],
 })
 export class NotificationsModule {}

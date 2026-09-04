@@ -3,6 +3,7 @@ import { SessionComment } from '../discussions/entities/session-comment.entity';
 import { TranscriptSegment } from '../captions/entities/transcript-segment.entity';
 import { StorageService } from '../common/storage/storage.service';
 import { Module } from '@nestjs/common';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { SessionBookmark } from './entities/bookmark.entity';
 import { Session } from './entities/session.entity';
@@ -23,6 +24,8 @@ import { SpeakersController } from './speakers.controller';
       SessionComment,
       TranscriptSegment,
     ]),
+    // a session going live is announced as a push to every delegate
+    NotificationsModule,
   ],
   controllers: [SessionController, SpeakersController],
   providers: [SessionsService, StorageService],

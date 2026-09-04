@@ -1,6 +1,7 @@
 import { ConflictException } from '@nestjs/common';
 import { SessionsService } from './sessions.service';
 import { Session, SessionStatus } from './entities/session.entity';
+import { AudienceSegment } from '../notifications/entities/notification.entity';
 
 /**
  * One room holds one session at a time. Clearing the room is the one edit
@@ -47,7 +48,12 @@ describe('SessionsService.update room clearing', () => {
       }),
       createQueryBuilder: jest.fn().mockReturnValue(qb),
     };
-    const realtime = { emitGlobal: jest.fn(), emit: jest.fn() };
+    const realtime = {
+      emitGlobal: jest.fn(),
+      emit: jest.fn(),
+      emitToRoom: jest.fn(),
+    };
+    const notifications = { announce: jest.fn().mockResolvedValue({}) };
     const service = new SessionsService(
       sessions as any,
       { findBy: jest.fn() } as any,
@@ -57,8 +63,9 @@ describe('SessionsService.update room clearing', () => {
       {} as any,
       realtime as any,
       {} as any,
+      notifications as any,
     );
-    return { service, saved, realtime, sessions };
+    return { service, saved, realtime, sessions, notifications };
   };
 
   it('pushes a later session just far enough to clear the edit', async () => {
@@ -199,5 +206,79 @@ describe('SessionsService.update room clearing', () => {
 
     expect(sessions.createQueryBuilder).not.toHaveBeenCalled();
     expect(sessions.save).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * The live push is the one thing a delegate with the app closed gets from a
+ * status change. It must fire exactly on the transition to live - not on
+ * every save while live, and not when a session ends.
+ */
+describe('SessionsService.setStatus live push', () => {
+  const at = (hhmm: string) => new Date(`2026-09-08T${hhmm}:00+01:00`);
+  const build = (status: SessionStatus) => {
+    const session = {
+      id: 's1',
+      title: 'Opening Plenary',
+      room: 'Main Hall',
+      day: 1,
+      status,
+      startsAt: at('09:00'),
+      endsAt: at('10:00'),
+      speakers: [],
+    } as unknown as Session;
+    const sessions = {
+      findOne: jest.fn().mockResolvedValue(session),
+      save: jest.fn().mockImplementation((v: Session) => Promise.resolve(v)),
+    };
+    const realtime = {
+      emitGlobal: jest.fn(),
+      emit: jest.fn(),
+      emitToRoom: jest.fn(),
+    };
+    const notifications = { announce: jest.fn().mockResolvedValue({}) };
+    const service = new SessionsService(
+      sessions as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      realtime as any,
+      {} as any,
+      notifications as any,
+    );
+    return { service, notifications };
+  };
+
+  it('announces to everyone when a session goes live', async () => {
+    const { service, notifications } = build(SessionStatus.SCHEDULED);
+    await service.setStatus('s1', SessionStatus.LIVE);
+    expect(notifications.announce).toHaveBeenCalledTimes(1);
+    expect(notifications.announce).toHaveBeenCalledWith({
+      title: 'Opening Plenary',
+      body: 'Now live in Main Hall',
+      segment: AudienceSegment.ALL,
+      category: 'session-live',
+    });
+  });
+
+  it('does not announce again when a live session is set live', async () => {
+    const { service, notifications } = build(SessionStatus.LIVE);
+    await service.setStatus('s1', SessionStatus.LIVE);
+    expect(notifications.announce).not.toHaveBeenCalled();
+  });
+
+  it('does not announce when a session completes', async () => {
+    const { service, notifications } = build(SessionStatus.LIVE);
+    await service.setStatus('s1', SessionStatus.COMPLETED);
+    expect(notifications.announce).not.toHaveBeenCalled();
+  });
+
+  it('keeps the status change when the push cannot be queued', async () => {
+    const { service, notifications } = build(SessionStatus.SCHEDULED);
+    notifications.announce.mockRejectedValue(new Error('redis down'));
+    const saved = await service.setStatus('s1', SessionStatus.LIVE);
+    expect(saved.status).toBe(SessionStatus.LIVE);
   });
 });
