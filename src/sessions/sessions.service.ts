@@ -270,7 +270,7 @@ export class SessionsService {
       data.room !== undefined ||
       data.day !== undefined;
     const { pushed, deltaMs } = placed
-      ? await this.clearRoom(session, Boolean(shiftFollowing))
+      ? await this.clearRoom(session, shiftFollowing ?? true)
       : { pushed: [], deltaMs: 0 };
 
     const saved = await this.sessions.save(session);
@@ -310,8 +310,10 @@ export class SessionsService {
    * happened. Room is matched loosely, the way the capture page does, so a
    * stray space in a room name cannot split a room into two timelines.
    *
-   * Without `push` a collision is refused (409) naming the session in the
-   * way, so a single wrong time cannot silently drag the rest of the day.
+   * Pushing is the default: an operator who moves a session wants the room
+   * to make sense afterwards, not an error. `push` false refuses a collision
+   * (409) naming the session in the way, for a caller that would rather
+   * know than have the rest of the day moved.
    * A collision with an *earlier* session is always refused: the edited
    * session is what the operator just typed, and the one before it cannot
    * be moved later without landing on top of it.

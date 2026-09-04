@@ -29,13 +29,15 @@ describe('SessionsService.update room clearing', () => {
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
-      getMany: jest.fn().mockImplementation(() =>
-        Promise.resolve(
-          others
-            .filter((s) => s.status !== SessionStatus.COMPLETED)
-            .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime()),
+      getMany: jest
+        .fn()
+        .mockImplementation(() =>
+          Promise.resolve(
+            others
+              .filter((s) => s.status !== SessionStatus.COMPLETED)
+              .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime()),
+          ),
         ),
-      ),
     };
     const sessions = {
       findOne: jest.fn().mockResolvedValue(edited),
@@ -128,7 +130,22 @@ describe('SessionsService.update room clearing', () => {
     expect(realtime.emitGlobal).not.toHaveBeenCalled();
   });
 
-  it('refuses a collision when not asked to push, and writes nothing', async () => {
+  it('pushes by default when the flag is not sent', async () => {
+    const edited = session({ startsAt: at('09:00'), endsAt: at('10:00') });
+    const next = session({
+      id: 'next',
+      startsAt: at('10:00'),
+      endsAt: at('11:00'),
+    });
+    const { service, saved } = build(edited, [next]);
+
+    await service.update('edited', { endsAt: iso('10:15') });
+
+    expect(saved).toEqual([[next]]);
+    expect(next.startsAt).toEqual(at('10:15'));
+  });
+
+  it('refuses a collision when told not to push, and writes nothing', async () => {
     const edited = session({ startsAt: at('09:00'), endsAt: at('10:00') });
     const next = session({
       id: 'next',
@@ -138,7 +155,7 @@ describe('SessionsService.update room clearing', () => {
     const { service, sessions } = build(edited, [next]);
 
     await expect(
-      service.update('edited', { endsAt: iso('10:15') }),
+      service.update('edited', { endsAt: iso('10:15'), shiftFollowing: false }),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(sessions.save).not.toHaveBeenCalled();
     expect(next.startsAt).toEqual(at('10:00'));
@@ -154,7 +171,10 @@ describe('SessionsService.update room clearing', () => {
     const { service, sessions } = build(edited, [prev]);
 
     await expect(
-      service.update('edited', { startsAt: iso('09:45'), shiftFollowing: true }),
+      service.update('edited', {
+        startsAt: iso('09:45'),
+        shiftFollowing: true,
+      }),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(sessions.save).not.toHaveBeenCalled();
   });
