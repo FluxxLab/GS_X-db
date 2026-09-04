@@ -9,6 +9,7 @@ import { Session, SessionStatus } from './entities/session.entity';
  */
 describe('SessionsService.update ripple', () => {
   const at = (hhmm: string) => new Date(`2026-09-08T${hhmm}:00+01:00`);
+  const iso = (hhmm: string) => `2026-09-08T${hhmm}:00+01:00`;
 
   const session = (over: Partial<Session>): Session =>
     ({
@@ -65,27 +66,29 @@ describe('SessionsService.update ripple', () => {
     return { service, saved, realtime, captured: () => captured };
   };
 
-  it('moves every later session in the room by the change in end time', async () => {
-    const edited = session({ startsAt: at('09:00'), endsAt: at('12:00') });
+  it('moves every later session in the room by the change in start time', async () => {
+    const edited = session({ startsAt: at('09:00'), endsAt: at('10:00') });
     const next = session({
       id: 'next',
-      startsAt: at('12:20'),
-      endsAt: at('13:00'),
+      startsAt: at('10:00'),
+      endsAt: at('11:00'),
     });
     const { service, saved, realtime } = build(edited, [next]);
 
+    // delayed by half an hour, length kept
     await service.update('edited', {
-      endsAt: '2026-09-08T13:00:00+01:00',
+      startsAt: iso('09:30'),
+      endsAt: iso('10:30'),
       shiftFollowing: true,
     });
 
     expect(saved).toHaveLength(1);
-    expect(next.startsAt).toEqual(at('13:20'));
-    expect(next.endsAt).toEqual(at('14:00'));
+    expect(next.startsAt).toEqual(at('10:30'));
+    expect(next.endsAt).toEqual(at('11:30'));
     expect(realtime.emitGlobal).toHaveBeenCalledWith(
       'sessions:shifted',
       expect.objectContaining({
-        deltaMinutes: 60,
+        deltaMinutes: 30,
         sessionIds: ['edited', 'next'],
       }),
     );
@@ -93,8 +96,8 @@ describe('SessionsService.update ripple', () => {
 
   it('still pushes a session that overlapped the edited one', async () => {
     // Pre Registration 09:00-13:00 with Hestel 12:20-13:00 on top of it: a
-    // timing error from before the edit. Extending the first by an hour must
-    // carry the second along, not skip it for starting before the old end.
+    // timing error from before the edit. Delaying the first must carry the
+    // second along, not skip it for starting before the old end.
     const edited = session({ startsAt: at('09:00'), endsAt: at('13:00') });
     const overlapping = session({
       id: 'next',
@@ -104,7 +107,8 @@ describe('SessionsService.update ripple', () => {
     const { service, saved, captured } = build(edited, [overlapping]);
 
     await service.update('edited', {
-      endsAt: '2026-09-08T14:00:00+01:00',
+      startsAt: iso('10:00'),
+      endsAt: iso('14:00'),
       shiftFollowing: true,
     });
 
@@ -114,38 +118,38 @@ describe('SessionsService.update ripple', () => {
     expect(overlapping.endsAt).toEqual(at('14:00'));
   });
 
-  it('does nothing when the end time did not move', async () => {
-    const edited = session({ startsAt: at('09:00'), endsAt: at('13:00') });
+  it('does nothing when only the end time moved', async () => {
+    const edited = session({ startsAt: at('09:00'), endsAt: at('10:00') });
     const next = session({
       id: 'next',
-      startsAt: at('13:00'),
-      endsAt: at('14:00'),
+      startsAt: at('10:00'),
+      endsAt: at('11:00'),
     });
     const { service, saved, realtime } = build(edited, [next]);
 
     await service.update('edited', {
-      title: 'renamed',
-      endsAt: '2026-09-08T13:00:00+01:00',
+      startsAt: iso('09:00'),
+      endsAt: iso('10:05'),
       shiftFollowing: true,
     });
 
     expect(saved).toHaveLength(0);
-    expect(next.startsAt).toEqual(at('13:00'));
+    expect(next.startsAt).toEqual(at('10:00'));
     expect(realtime.emitGlobal).not.toHaveBeenCalled();
   });
 
   it('does not ripple unless asked', async () => {
-    const edited = session({ startsAt: at('09:00'), endsAt: at('12:00') });
+    const edited = session({ startsAt: at('09:00'), endsAt: at('10:00') });
     const next = session({
       id: 'next',
-      startsAt: at('12:00'),
-      endsAt: at('13:00'),
+      startsAt: at('10:00'),
+      endsAt: at('11:00'),
     });
     const { service, saved } = build(edited, [next]);
 
-    await service.update('edited', { endsAt: '2026-09-08T13:00:00+01:00' });
+    await service.update('edited', { startsAt: iso('09:30') });
 
     expect(saved).toHaveLength(0);
-    expect(next.startsAt).toEqual(at('12:00'));
+    expect(next.startsAt).toEqual(at('10:00'));
   });
 });

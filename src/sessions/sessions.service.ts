@@ -254,7 +254,6 @@ export class SessionsService {
     // what the room's timeline looked like before this edit; the ripple
     // below is measured against it, not against the new values
     const previousStart = session.startsAt;
-    const previousEnd = session.endsAt;
     const previousRoom = session.room;
     Object.assign(session, data);
 
@@ -269,12 +268,7 @@ export class SessionsService {
     const saved = await this.sessions.save(session);
 
     if (shiftFollowing) {
-      await this.shiftFollowing(
-        saved,
-        previousRoom,
-        previousStart,
-        previousEnd,
-      );
+      await this.shiftFollowing(saved, previousRoom, previousStart);
     }
 
     // status is a transition, not a field write — reuse the one path
@@ -285,16 +279,19 @@ export class SessionsService {
   }
 
   /**
-   * Ripple an end-time change down the room.
+   * Ripple a start-time change down the room.
    *
-   * A keynote runs twenty minutes over; without this the operator edits the
-   * next six sessions one at a time while the hall waits. With it, the edit
-   * to the keynote carries every later session in that room and day along by
-   * the same amount, start and end together, so durations are preserved and
-   * the gaps between sessions stay what the programme said they were.
+   * A keynote is pushed back twenty minutes; without this the operator edits
+   * the next six sessions one at a time while the hall waits. With it, the
+   * edit to the keynote carries every later session in that room and day
+   * along by the same amount, start and end together, so durations are
+   * preserved and the gaps between sessions stay what the programme said.
    *
-   * Measured as the change in end time, because that is the thing an overrun
-   * or an early finish actually moves. Same room and same day only: a delay
+   * Measured as the change in start time, because a delay is what the
+   * operator actually types: the new start. The edited session's own end is
+   * left to the operator (the form keeps its length by default). An overrun
+   * is entered the same way - move the start of the session that follows
+   * the one running late. Same room and same day only: a delay
    * in one hall is not a delay in the others. Completed sessions are left
    * alone - they already happened. Room is matched loosely, the way the
    * capture page does, so a stray space in a room name cannot split a room
@@ -310,9 +307,8 @@ export class SessionsService {
     edited: Session,
     room: string,
     previousStart: Date,
-    previousEnd: Date,
   ): Promise<void> {
-    const deltaMs = edited.endsAt.getTime() - previousEnd.getTime();
+    const deltaMs = edited.startsAt.getTime() - previousStart.getTime();
     if (deltaMs === 0) return;
 
     const following = await this.sessions
