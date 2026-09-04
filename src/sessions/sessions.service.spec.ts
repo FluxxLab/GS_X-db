@@ -1,20 +1,21 @@
+import { ConflictException } from '@nestjs/common';
 import { SessionsService } from './sessions.service';
 import { Session, SessionStatus } from './entities/session.entity';
 
 /**
- * The ripple is the one edit that writes rows the operator did not open. A
- * wrong threshold silently leaves half a room's afternoon where it was, and
- * nothing else in the system would report it. These pin down which sessions
- * move and by how much.
+ * One room holds one session at a time. Clearing the room is the one edit
+ * that writes rows the operator did not open, and a wrong rule either leaves
+ * two sessions on top of each other or drags half a day for nothing. These
+ * pin down what moves, how far, and what is refused.
  */
-describe('SessionsService.update ripple', () => {
+describe('SessionsService.update room clearing', () => {
   const at = (hhmm: string) => new Date(`2026-09-08T${hhmm}:00+01:00`);
   const iso = (hhmm: string) => `2026-09-08T${hhmm}:00+01:00`;
 
   const session = (over: Partial<Session>): Session =>
     ({
       id: over.id ?? 'edited',
-      title: 'x',
+      title: over.id ?? 'edited',
       day: 1,
       room: 'Hestel',
       status: SessionStatus.SCHEDULED,
@@ -24,25 +25,17 @@ describe('SessionsService.update ripple', () => {
 
   const build = (edited: Session, others: Session[]) => {
     const saved: Session[][] = [];
-    let captured: { from?: Date; status?: string } = {};
     const qb = {
       where: jest.fn().mockReturnThis(),
-      andWhere: jest.fn().mockImplementation((_sql: string, params?: any) => {
-        captured = { ...captured, ...params };
-        return qb;
-      }),
+      andWhere: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
-      getMany: jest
-        .fn()
-        .mockImplementation(() =>
-          Promise.resolve(
-            others.filter(
-              (s) =>
-                s.status !== SessionStatus.COMPLETED &&
-                s.startsAt.getTime() > captured.from!.getTime(),
-            ),
-          ),
+      getMany: jest.fn().mockImplementation(() =>
+        Promise.resolve(
+          others
+            .filter((s) => s.status !== SessionStatus.COMPLETED)
+            .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime()),
         ),
+      ),
     };
     const sessions = {
       findOne: jest.fn().mockResolvedValue(edited),
@@ -63,17 +56,43 @@ describe('SessionsService.update ripple', () => {
       realtime as any,
       {} as any,
     );
-    return { service, saved, realtime, captured: () => captured };
+    return { service, saved, realtime, sessions };
   };
 
-  it('moves every later session in the room by the change in start time', async () => {
-    const edited = session({ startsAt: at('09:00'), endsAt: at('10:00') });
+  it('pushes a later session just far enough to clear the edit', async () => {
+    // Pre Registration 12:00-13:00 edited to end 13:30; Hestel 12:25-13:05
+    // was already on top of it. Hestel lands at 13:30, keeping its 40 min.
+    const edited = session({ startsAt: at('12:00'), endsAt: at('13:00') });
     const next = session({
       id: 'next',
-      startsAt: at('10:00'),
-      endsAt: at('11:00'),
+      startsAt: at('12:25'),
+      endsAt: at('13:05'),
     });
     const { service, saved, realtime } = build(edited, [next]);
+
+    await service.update('edited', {
+      endsAt: iso('13:30'),
+      shiftFollowing: true,
+    });
+
+    expect(saved).toEqual([[next]]);
+    expect(next.startsAt).toEqual(at('13:30'));
+    expect(next.endsAt).toEqual(at('14:10'));
+    expect(realtime.emitGlobal).toHaveBeenCalledWith(
+      'sessions:shifted',
+      expect.objectContaining({
+        deltaMinutes: 65,
+        sessionIds: ['edited', 'next'],
+      }),
+    );
+  });
+
+  it('cascades: a pushed session pushes the one it lands on', async () => {
+    const edited = session({ startsAt: at('09:00'), endsAt: at('10:00') });
+    const b = session({ id: 'b', startsAt: at('10:00'), endsAt: at('11:00') });
+    const c = session({ id: 'c', startsAt: at('11:00'), endsAt: at('12:00') });
+    const d = session({ id: 'd', startsAt: at('13:00'), endsAt: at('14:00') });
+    const { service, saved } = build(edited, [b, c, d]);
 
     // delayed by half an hour, length kept
     await service.update('edited', {
@@ -82,74 +101,76 @@ describe('SessionsService.update ripple', () => {
       shiftFollowing: true,
     });
 
-    expect(saved).toHaveLength(1);
-    expect(next.startsAt).toEqual(at('10:30'));
-    expect(next.endsAt).toEqual(at('11:30'));
-    expect(realtime.emitGlobal).toHaveBeenCalledWith(
-      'sessions:shifted',
-      expect.objectContaining({
-        deltaMinutes: 30,
-        sessionIds: ['edited', 'next'],
-      }),
-    );
+    expect(saved[0].map((s) => s.id)).toEqual(['b', 'c']);
+    expect(b.startsAt).toEqual(at('10:30'));
+    expect(c.startsAt).toEqual(at('11:30'));
+    expect(c.endsAt).toEqual(at('12:30'));
+    // the gap before d absorbs the delay; d stays put
+    expect(d.startsAt).toEqual(at('13:00'));
   });
 
-  it('still pushes a session that overlapped the edited one', async () => {
-    // Pre Registration 09:00-13:00 with Hestel 12:20-13:00 on top of it: a
-    // timing error from before the edit. Delaying the first must carry the
-    // second along, not skip it for starting before the old end.
-    const edited = session({ startsAt: at('09:00'), endsAt: at('13:00') });
-    const overlapping = session({
-      id: 'next',
-      startsAt: at('12:20'),
-      endsAt: at('13:00'),
-    });
-    const { service, saved, captured } = build(edited, [overlapping]);
-
-    await service.update('edited', {
-      startsAt: iso('10:00'),
-      endsAt: iso('14:00'),
-      shiftFollowing: true,
-    });
-
-    expect(captured().from).toEqual(at('09:00'));
-    expect(saved).toHaveLength(1);
-    expect(overlapping.startsAt).toEqual(at('13:20'));
-    expect(overlapping.endsAt).toEqual(at('14:00'));
-  });
-
-  it('does nothing when only the end time moved', async () => {
+  it('leaves the room alone when nothing overlaps', async () => {
     const edited = session({ startsAt: at('09:00'), endsAt: at('10:00') });
     const next = session({
       id: 'next',
-      startsAt: at('10:00'),
+      startsAt: at('10:30'),
       endsAt: at('11:00'),
     });
     const { service, saved, realtime } = build(edited, [next]);
 
     await service.update('edited', {
-      startsAt: iso('09:00'),
-      endsAt: iso('10:05'),
+      endsAt: iso('10:15'),
       shiftFollowing: true,
     });
 
     expect(saved).toHaveLength(0);
-    expect(next.startsAt).toEqual(at('10:00'));
+    expect(next.startsAt).toEqual(at('10:30'));
     expect(realtime.emitGlobal).not.toHaveBeenCalled();
   });
 
-  it('does not ripple unless asked', async () => {
+  it('refuses a collision when not asked to push, and writes nothing', async () => {
     const edited = session({ startsAt: at('09:00'), endsAt: at('10:00') });
     const next = session({
       id: 'next',
       startsAt: at('10:00'),
       endsAt: at('11:00'),
     });
-    const { service, saved } = build(edited, [next]);
+    const { service, sessions } = build(edited, [next]);
 
-    await service.update('edited', { startsAt: iso('09:30') });
-
-    expect(saved).toHaveLength(0);
+    await expect(
+      service.update('edited', { endsAt: iso('10:15') }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(sessions.save).not.toHaveBeenCalled();
     expect(next.startsAt).toEqual(at('10:00'));
+  });
+
+  it('refuses an edit that starts inside the session before it', async () => {
+    const edited = session({ startsAt: at('10:00'), endsAt: at('11:00') });
+    const prev = session({
+      id: 'prev',
+      startsAt: at('09:00'),
+      endsAt: at('10:00'),
+    });
+    const { service, sessions } = build(edited, [prev]);
+
+    await expect(
+      service.update('edited', { startsAt: iso('09:45'), shiftFollowing: true }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(sessions.save).not.toHaveBeenCalled();
+  });
+
+  it('does not touch the room when only the title changed', async () => {
+    const edited = session({ startsAt: at('09:00'), endsAt: at('10:00') });
+    const next = session({
+      id: 'next',
+      startsAt: at('09:30'),
+      endsAt: at('10:30'),
+    }); // already overlapping, but this edit is not about time
+    const { service, sessions } = build(edited, [next]);
+
+    await service.update('edited', { title: 'renamed' });
+
+    expect(sessions.createQueryBuilder).not.toHaveBeenCalled();
+    expect(sessions.save).toHaveBeenCalledTimes(1);
   });
 });

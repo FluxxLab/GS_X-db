@@ -251,10 +251,6 @@ export class SessionsService {
     const session = await this.findById(id);
     const { speakerIds, startsAt, endsAt, status, shiftFollowing, ...data } =
       dto;
-    // what the room's timeline looked like before this edit; the ripple
-    // below is measured against it, not against the new values
-    const previousStart = session.startsAt;
-    const previousRoom = session.room;
     Object.assign(session, data);
 
     if (startsAt) session.startsAt = new Date(startsAt);
@@ -265,10 +261,33 @@ export class SessionsService {
         : [];
     }
 
+    // Anything that changes where or when this session sits has to leave
+    // the room's timeline free of overlaps. Planned before the write so a
+    // refused edit leaves nothing half-applied.
+    const placed =
+      startsAt !== undefined ||
+      endsAt !== undefined ||
+      data.room !== undefined ||
+      data.day !== undefined;
+    const { pushed, deltaMs } = placed
+      ? await this.clearRoom(session, Boolean(shiftFollowing))
+      : { pushed: [], deltaMs: 0 };
+
     const saved = await this.sessions.save(session);
 
-    if (shiftFollowing) {
-      await this.shiftFollowing(saved, previousRoom, previousStart);
+    if (pushed.length > 0) {
+      await this.sessions.save(pushed);
+      // Every client showing a schedule needs to refetch: the delegate app's
+      // agenda, the venue board, and any other console tab.
+      this.realtime.emitGlobal('sessions:shifted', {
+        room: saved.room,
+        day: saved.day,
+        deltaMinutes: Math.round(deltaMs / 60_000),
+        sessionIds: [saved.id, ...pushed.map((s) => s.id)],
+      });
+      this.logger.log(
+        `${saved.room}: pushed ${pushed.length} session(s) after "${saved.title}" to clear an overlap`,
+      );
     }
 
     // status is a transition, not a field write — reuse the one path
@@ -279,66 +298,77 @@ export class SessionsService {
   }
 
   /**
-   * Ripple a start-time change down the room.
+   * One room holds one session at a time. Given a session with its new
+   * times already applied, work out what the rest of that room and day has
+   * to do about it.
    *
-   * A keynote is pushed back twenty minutes; without this the operator edits
-   * the next six sessions one at a time while the hall waits. With it, the
-   * edit to the keynote carries every later session in that room and day
-   * along by the same amount, start and end together, so durations are
-   * preserved and the gaps between sessions stay what the programme said.
+   * Sessions after it are walked in start order, each one pushed just far
+   * enough to start when the one before it ends - and no further, so a gap
+   * the programme left is kept unless the delay needs it. The push cascades:
+   * a session moved into the next one moves that one too. Durations are
+   * never changed. Completed sessions are left alone - they already
+   * happened. Room is matched loosely, the way the capture page does, so a
+   * stray space in a room name cannot split a room into two timelines.
    *
-   * Measured as the change in start time, because a delay is what the
-   * operator actually types: the new start. The edited session's own end is
-   * left to the operator (the form keeps its length by default). An overrun
-   * is entered the same way - move the start of the session that follows
-   * the one running late. Same room and same day only: a delay
-   * in one hall is not a delay in the others. Completed sessions are left
-   * alone - they already happened. Room is matched loosely, the way the
-   * capture page does, so a stray space in a room name cannot split a room
-   * into two timelines.
+   * Without `push` a collision is refused (409) naming the session in the
+   * way, so a single wrong time cannot silently drag the rest of the day.
+   * A collision with an *earlier* session is always refused: the edited
+   * session is what the operator just typed, and the one before it cannot
+   * be moved later without landing on top of it.
    *
-   * "Following" means starting after this session's old start, not after its
-   * old end. One room cannot hold two sessions at once, so anything that
-   * overlaps the edited one is a timing error already, and the operator
-   * fixing the first session expects the rest of the room to come along -
-   * not to be skipped because they were wrong before the edit.
+   * Returns the sessions that moved, with their new times set but not yet
+   * saved, so the caller can write them in the same breath as the edit, and
+   * the largest push applied, for the log and the shifted event.
    */
-  private async shiftFollowing(
+  private async clearRoom(
     edited: Session,
-    room: string,
-    previousStart: Date,
-  ): Promise<void> {
-    const deltaMs = edited.startsAt.getTime() - previousStart.getTime();
-    if (deltaMs === 0) return;
-
-    const following = await this.sessions
+    push: boolean,
+  ): Promise<{ pushed: Session[]; deltaMs: number }> {
+    const others = await this.sessions
       .createQueryBuilder('s')
-      .where('LOWER(TRIM(s.room)) = LOWER(TRIM(:room))', { room })
+      .where('LOWER(TRIM(s.room)) = LOWER(TRIM(:room))', { room: edited.room })
       .andWhere('s.day = :day', { day: edited.day })
       .andWhere('s.id <> :id', { id: edited.id })
       .andWhere('s.status <> :done', { done: SessionStatus.COMPLETED })
-      .andWhere('s."startsAt" > :from', { from: previousStart })
       .orderBy('s."startsAt"', 'ASC')
       .getMany();
-    if (following.length === 0) return;
 
-    for (const s of following) {
-      s.startsAt = new Date(s.startsAt.getTime() + deltaMs);
-      s.endsAt = new Date(s.endsAt.getTime() + deltaMs);
-    }
-    await this.sessions.save(following);
+    const start = edited.startsAt.getTime();
+    const hhmm = (d: Date) =>
+      d.toLocaleTimeString('en-GB', {
+        timeZone: 'Africa/Lagos',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
 
-    // Every client showing a schedule needs to refetch: the delegate app's
-    // agenda, the venue board, and any other console tab.
-    this.realtime.emitGlobal('sessions:shifted', {
-      room,
-      day: edited.day,
-      deltaMinutes: Math.round(deltaMs / 60_000),
-      sessionIds: [edited.id, ...following.map((s) => s.id)],
-    });
-    this.logger.log(
-      `${room}: shifted ${following.length} session(s) after "${edited.title}" by ${Math.round(deltaMs / 60_000)} min`,
+    const before = others.find(
+      (s) => s.startsAt.getTime() < start && s.endsAt.getTime() > start,
     );
+    if (before) {
+      throw new ConflictException(
+        `"${edited.title}" would start before "${before.title}" ends at ${hhmm(before.endsAt)} in ${edited.room}. Move that session first.`,
+      );
+    }
+
+    const pushed: Session[] = [];
+    let deltaMs = 0;
+    let prevEnd = edited.endsAt.getTime();
+    for (const s of others.filter((o) => o.startsAt.getTime() >= start)) {
+      if (s.startsAt.getTime() < prevEnd) {
+        if (!push) {
+          throw new ConflictException(
+            `"${edited.title}" would overlap "${s.title}" (${hhmm(s.startsAt)}–${hhmm(s.endsAt)}) in ${edited.room}. Shorten it, or shift the sessions that follow.`,
+          );
+        }
+        const delta = prevEnd - s.startsAt.getTime();
+        s.startsAt = new Date(s.startsAt.getTime() + delta);
+        s.endsAt = new Date(s.endsAt.getTime() + delta);
+        pushed.push(s);
+        deltaMs = Math.max(deltaMs, delta);
+      }
+      prevEnd = s.endsAt.getTime();
+    }
+    return { pushed, deltaMs };
   }
 
   async setStatus(id: string, status: SessionStatus): Promise<Session> {

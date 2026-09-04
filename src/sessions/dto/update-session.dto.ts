@@ -4,14 +4,16 @@ import { CreateSessionDto } from './create-session.dto';
 
 export class UpdateSessionDto extends PartialType(CreateSessionDto) {
   /**
-   * Ripple this edit down the room. When the start time moves, every later
-   * session in the same room on the same day moves by the same amount, so a
-   * keynote pushed back 20 minutes is one edit, not six. Off by default:
-   * a correction to a single wrong time must not drag the rest of the day.
+   * One room holds one session at a time. When this edit would land on a
+   * later session in the same room and day, push that session - and any it
+   * lands on in turn - just far enough to start when the previous one ends,
+   * so a keynote pushed back 20 minutes is one edit, not six. Off by
+   * default: without it a collision is refused (409) naming the session in
+   * the way, so a single wrong time cannot silently drag the rest of the day.
    */
   @ApiPropertyOptional({
     description:
-      'Shift every later session in this room and day by the change in start time',
+      'Push later sessions in this room and day out of the way if this edit would overlap them; otherwise a collision is refused',
     default: false,
   })
   @IsOptional()
