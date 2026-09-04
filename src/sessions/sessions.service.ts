@@ -253,6 +253,7 @@ export class SessionsService {
       dto;
     // what the room's timeline looked like before this edit; the ripple
     // below is measured against it, not against the new values
+    const previousStart = session.startsAt;
     const previousEnd = session.endsAt;
     const previousRoom = session.room;
     Object.assign(session, data);
@@ -268,7 +269,12 @@ export class SessionsService {
     const saved = await this.sessions.save(session);
 
     if (shiftFollowing) {
-      await this.shiftFollowing(saved, previousRoom, previousEnd);
+      await this.shiftFollowing(
+        saved,
+        previousRoom,
+        previousStart,
+        previousEnd,
+      );
     }
 
     // status is a transition, not a field write — reuse the one path
@@ -293,10 +299,17 @@ export class SessionsService {
    * alone - they already happened. Room is matched loosely, the way the
    * capture page does, so a stray space in a room name cannot split a room
    * into two timelines.
+   *
+   * "Following" means starting after this session's old start, not after its
+   * old end. One room cannot hold two sessions at once, so anything that
+   * overlaps the edited one is a timing error already, and the operator
+   * fixing the first session expects the rest of the room to come along -
+   * not to be skipped because they were wrong before the edit.
    */
   private async shiftFollowing(
     edited: Session,
     room: string,
+    previousStart: Date,
     previousEnd: Date,
   ): Promise<void> {
     const deltaMs = edited.endsAt.getTime() - previousEnd.getTime();
@@ -308,7 +321,7 @@ export class SessionsService {
       .andWhere('s.day = :day', { day: edited.day })
       .andWhere('s.id <> :id', { id: edited.id })
       .andWhere('s.status <> :done', { done: SessionStatus.COMPLETED })
-      .andWhere('s."startsAt" >= :from', { from: previousEnd })
+      .andWhere('s."startsAt" > :from', { from: previousStart })
       .orderBy('s."startsAt"', 'ASC')
       .getMany();
     if (following.length === 0) return;
