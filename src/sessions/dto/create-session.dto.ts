@@ -42,12 +42,16 @@ export class CreateSessionDto {
    */
   @ApiProperty({ example: '2026-09-08T08:00:00+01:00' })
   @IsDateString()
-  @Matches(TZ_OFFSET, { message: 'startsAt must carry a timezone offset, e.g. +01:00' })
+  @Matches(TZ_OFFSET, {
+    message: 'startsAt must carry a timezone offset, e.g. +01:00',
+  })
   startsAt: string;
 
   @ApiProperty({ example: '2026-09-08T08:00:00+01:00' })
   @IsDateString()
-  @Matches(TZ_OFFSET, { message: 'endsAt must carry a timezone offset, e.g. +01:00' })
+  @Matches(TZ_OFFSET, {
+    message: 'endsAt must carry a timezone offset, e.g. +01:00',
+  })
   endsAt: string;
 
   @ApiProperty()

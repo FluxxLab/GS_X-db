@@ -31,15 +31,17 @@ describe('SessionsService.update ripple', () => {
         return qb;
       }),
       orderBy: jest.fn().mockReturnThis(),
-      getMany: jest.fn().mockImplementation(() =>
-        Promise.resolve(
-          others.filter(
-            (s) =>
-              s.status !== SessionStatus.COMPLETED &&
-              s.startsAt.getTime() > captured.from!.getTime(),
+      getMany: jest
+        .fn()
+        .mockImplementation(() =>
+          Promise.resolve(
+            others.filter(
+              (s) =>
+                s.status !== SessionStatus.COMPLETED &&
+                s.startsAt.getTime() > captured.from!.getTime(),
+            ),
           ),
         ),
-      ),
     };
     const sessions = {
       findOne: jest.fn().mockResolvedValue(edited),
@@ -65,7 +67,11 @@ describe('SessionsService.update ripple', () => {
 
   it('moves every later session in the room by the change in end time', async () => {
     const edited = session({ startsAt: at('09:00'), endsAt: at('12:00') });
-    const next = session({ id: 'next', startsAt: at('12:20'), endsAt: at('13:00') });
+    const next = session({
+      id: 'next',
+      startsAt: at('12:20'),
+      endsAt: at('13:00'),
+    });
     const { service, saved, realtime } = build(edited, [next]);
 
     await service.update('edited', {
@@ -78,7 +84,10 @@ describe('SessionsService.update ripple', () => {
     expect(next.endsAt).toEqual(at('14:00'));
     expect(realtime.emitGlobal).toHaveBeenCalledWith(
       'sessions:shifted',
-      expect.objectContaining({ deltaMinutes: 60, sessionIds: ['edited', 'next'] }),
+      expect.objectContaining({
+        deltaMinutes: 60,
+        sessionIds: ['edited', 'next'],
+      }),
     );
   });
 
@@ -87,7 +96,11 @@ describe('SessionsService.update ripple', () => {
     // timing error from before the edit. Extending the first by an hour must
     // carry the second along, not skip it for starting before the old end.
     const edited = session({ startsAt: at('09:00'), endsAt: at('13:00') });
-    const overlapping = session({ id: 'next', startsAt: at('12:20'), endsAt: at('13:00') });
+    const overlapping = session({
+      id: 'next',
+      startsAt: at('12:20'),
+      endsAt: at('13:00'),
+    });
     const { service, saved, captured } = build(edited, [overlapping]);
 
     await service.update('edited', {
@@ -103,7 +116,11 @@ describe('SessionsService.update ripple', () => {
 
   it('does nothing when the end time did not move', async () => {
     const edited = session({ startsAt: at('09:00'), endsAt: at('13:00') });
-    const next = session({ id: 'next', startsAt: at('13:00'), endsAt: at('14:00') });
+    const next = session({
+      id: 'next',
+      startsAt: at('13:00'),
+      endsAt: at('14:00'),
+    });
     const { service, saved, realtime } = build(edited, [next]);
 
     await service.update('edited', {
@@ -119,7 +136,11 @@ describe('SessionsService.update ripple', () => {
 
   it('does not ripple unless asked', async () => {
     const edited = session({ startsAt: at('09:00'), endsAt: at('12:00') });
-    const next = session({ id: 'next', startsAt: at('12:00'), endsAt: at('13:00') });
+    const next = session({
+      id: 'next',
+      startsAt: at('12:00'),
+      endsAt: at('13:00'),
+    });
     const { service, saved } = build(edited, [next]);
 
     await service.update('edited', { endsAt: '2026-09-08T13:00:00+01:00' });
