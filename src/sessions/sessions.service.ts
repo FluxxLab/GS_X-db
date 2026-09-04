@@ -159,6 +159,37 @@ export class SessionsService {
     });
   }
 
+  /**
+   * The venue board: what every room is doing, for a public screen.
+   *
+   * Public and unauthenticated, so it carries only what a departures board
+   * needs - title, room, times, status, and the line-up. Speaker names go
+   * through SpeakerRevealInterceptor like every other response, so before the
+   * reveal a screen shows "To be announced" and not the withheld line-up.
+   *
+   * Everything comes back rather than "today": the screen decides what is
+   * live, next and later from the clock, and the operator-set status, and a
+   * day boundary in Abuja is not one the server should be guessing at.
+   */
+  board(): Promise<Session[]> {
+    return this.sessions.find({
+      select: {
+        id: true,
+        title: true,
+        day: true,
+        startsAt: true,
+        endsAt: true,
+        room: true,
+        track: true,
+        type: true,
+        status: true,
+        speakers: { id: true, name: true, role: true, organisation: true },
+      },
+      relations: { speakers: true },
+      order: { startsAt: 'ASC' },
+    });
+  }
+
   findLiveInRoom(room: string): Promise<Session | null> {
     /**
      * Matched loosely on purpose. The capture page sends whichever room string

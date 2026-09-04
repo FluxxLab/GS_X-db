@@ -76,6 +76,21 @@ export class SessionController {
     return this.service.tracks();
   }
 
+  /**
+   * The venue departures board. Public: it runs on a TV in the wings with no
+   * one to log in, and it exposes nothing a printed programme does not.
+   * Declared before :id for the same reason as tracks.
+   */
+  @Public()
+  @Get('board')
+  @ApiOperation({
+    summary:
+      'Every session with room, times and status, for a public venue screen',
+  })
+  board() {
+    return this.service.board();
+  }
+
   @Get(':id')
   @ApiOperation({})
   findOne(@Param('id', ParseUUIDPipe) id: string) {
