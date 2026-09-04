@@ -52,7 +52,7 @@ export class SessionsService {
 
     @Inject(REDIS)
     private readonly redis: Redis,
-  ) {}
+  ) { }
 
   /* --------------------------------------------- speaker reveal (FR-02/03) */
 
@@ -236,11 +236,15 @@ export class SessionsService {
       endsAt: new Date(dto.endsAt),
       speakers: speakerIds?.length
         ? await this.speakers.findBy({
-            id: In(speakerIds),
-          })
+          id: In(speakerIds),
+        })
         : [],
     });
-    return this.sessions.save(session);
+    const saved = await this.sessions.save(session);
+    // Every schedule on screen refetches: the delegate agenda, the venue
+    // board, and any other console tab.
+    this.realtime.emitGlobal('session:created', { sessionId: saved.id });
+    return saved;
   }
 
   async createBulk(dtos: CreateSessionDto[]): Promise<Session[]> {
@@ -289,6 +293,10 @@ export class SessionsService {
         `${saved.room}: pushed ${pushed.length} session(s) after "${saved.title}" to clear an overlap`,
       );
     }
+
+    // A plain edit - a new time, room or title - has to reach every screen
+    // too, not only the ones that involved a push.
+    this.realtime.emitGlobal('session:updated', { sessionId: saved.id });
 
     // status is a transition, not a field write — reuse the one path
     // that emits to the room and trips the audit interceptor

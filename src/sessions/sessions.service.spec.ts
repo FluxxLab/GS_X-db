@@ -127,7 +127,14 @@ describe('SessionsService.update room clearing', () => {
 
     expect(saved).toHaveLength(0);
     expect(next.startsAt).toEqual(at('10:30'));
-    expect(realtime.emitGlobal).not.toHaveBeenCalled();
+    expect(realtime.emitGlobal).not.toHaveBeenCalledWith(
+      'sessions:shifted',
+      expect.anything(),
+    );
+    // the plain edit is still announced
+    expect(realtime.emitGlobal).toHaveBeenCalledWith('session:updated', {
+      sessionId: 'edited',
+    });
   });
 
   it('pushes by default when the flag is not sent', async () => {
