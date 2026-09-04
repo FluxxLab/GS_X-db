@@ -2,6 +2,7 @@ import {
   ConflictException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -26,6 +27,8 @@ import { RealtimeService, Rooms } from 'src/common/realtime/realtime.service';
 
 @Injectable()
 export class SessionsService {
+  private readonly logger = new Logger(SessionsService.name);
+
   constructor(
     @InjectRepository(Session)
     private readonly sessions: Repository<Session>,
@@ -246,7 +249,12 @@ export class SessionsService {
 
   async update(id: string, dto: UpdateSessionDto): Promise<Session> {
     const session = await this.findById(id);
-    const { speakerIds, startsAt, endsAt, status, ...data } = dto;
+    const { speakerIds, startsAt, endsAt, status, shiftFollowing, ...data } =
+      dto;
+    // what the room's timeline looked like before this edit; the ripple
+    // below is measured against it, not against the new values
+    const previousEnd = session.endsAt;
+    const previousRoom = session.room;
     Object.assign(session, data);
 
     if (startsAt) session.startsAt = new Date(startsAt);
@@ -259,11 +267,69 @@ export class SessionsService {
 
     const saved = await this.sessions.save(session);
 
+    if (shiftFollowing) {
+      await this.shiftFollowing(saved, previousRoom, previousEnd);
+    }
+
     // status is a transition, not a field write — reuse the one path
     // that emits to the room and trips the audit interceptor
     return status && status !== session.status
       ? this.setStatus(id, status)
       : saved;
+  }
+
+  /**
+   * Ripple an end-time change down the room.
+   *
+   * A keynote runs twenty minutes over; without this the operator edits the
+   * next six sessions one at a time while the hall waits. With it, the edit
+   * to the keynote carries every later session in that room and day along by
+   * the same amount, start and end together, so durations are preserved and
+   * the gaps between sessions stay what the programme said they were.
+   *
+   * Measured as the change in end time, because that is the thing an overrun
+   * or an early finish actually moves. Same room and same day only: a delay
+   * in one hall is not a delay in the others. Completed sessions are left
+   * alone - they already happened. Room is matched loosely, the way the
+   * capture page does, so a stray space in a room name cannot split a room
+   * into two timelines.
+   */
+  private async shiftFollowing(
+    edited: Session,
+    room: string,
+    previousEnd: Date,
+  ): Promise<void> {
+    const deltaMs = edited.endsAt.getTime() - previousEnd.getTime();
+    if (deltaMs === 0) return;
+
+    const following = await this.sessions
+      .createQueryBuilder('s')
+      .where('LOWER(TRIM(s.room)) = LOWER(TRIM(:room))', { room })
+      .andWhere('s.day = :day', { day: edited.day })
+      .andWhere('s.id <> :id', { id: edited.id })
+      .andWhere('s.status <> :done', { done: SessionStatus.COMPLETED })
+      .andWhere('s."startsAt" >= :from', { from: previousEnd })
+      .orderBy('s."startsAt"', 'ASC')
+      .getMany();
+    if (following.length === 0) return;
+
+    for (const s of following) {
+      s.startsAt = new Date(s.startsAt.getTime() + deltaMs);
+      s.endsAt = new Date(s.endsAt.getTime() + deltaMs);
+    }
+    await this.sessions.save(following);
+
+    // Every client showing a schedule needs to refetch: the delegate app's
+    // agenda, the venue board, and any other console tab.
+    this.realtime.emitGlobal('sessions:shifted', {
+      room,
+      day: edited.day,
+      deltaMinutes: Math.round(deltaMs / 60_000),
+      sessionIds: [edited.id, ...following.map((s) => s.id)],
+    });
+    this.logger.log(
+      `${room}: shifted ${following.length} session(s) after "${edited.title}" by ${Math.round(deltaMs / 60_000)} min`,
+    );
   }
 
   async setStatus(id: string, status: SessionStatus): Promise<Session> {
