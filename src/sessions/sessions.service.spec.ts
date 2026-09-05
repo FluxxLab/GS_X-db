@@ -54,6 +54,10 @@ describe('SessionsService.update room clearing', () => {
       emitToRoom: jest.fn(),
     };
     const notifications = { announce: jest.fn().mockResolvedValue({}) };
+    const reminders = {
+      add: jest.fn().mockResolvedValue({}),
+      remove: jest.fn().mockResolvedValue(1),
+    };
     const service = new SessionsService(
       sessions as any,
       { findBy: jest.fn() } as any,
@@ -64,6 +68,7 @@ describe('SessionsService.update room clearing', () => {
       realtime as any,
       {} as any,
       notifications as any,
+      reminders as any,
     );
     return { service, saved, realtime, sessions, notifications };
   };
@@ -237,6 +242,10 @@ describe('SessionsService.setStatus live push', () => {
       emitToRoom: jest.fn(),
     };
     const notifications = { announce: jest.fn().mockResolvedValue({}) };
+    const reminders = {
+      add: jest.fn().mockResolvedValue({}),
+      remove: jest.fn().mockResolvedValue(1),
+    };
     const service = new SessionsService(
       sessions as any,
       {} as any,
@@ -247,6 +256,7 @@ describe('SessionsService.setStatus live push', () => {
       realtime as any,
       {} as any,
       notifications as any,
+      reminders as any,
     );
     return { service, notifications };
   };
@@ -280,5 +290,313 @@ describe('SessionsService.setStatus live push', () => {
     notifications.announce.mockRejectedValue(new Error('redis down'));
     const saved = await service.setStatus('s1', SessionStatus.LIVE);
     expect(saved.status).toBe(SessionStatus.LIVE);
+  });
+});
+
+/**
+ * Every programme change is announced to every delegate. These pin down
+ * which edits buzz, which do not, and that an agenda import is one push and
+ * not sixty.
+ */
+describe('SessionsService programme notifications', () => {
+  const at = (hhmm: string) => new Date(`2026-09-08T${hhmm}:00+01:00`);
+  const iso = (hhmm: string) => `2026-09-08T${hhmm}:00+01:00`;
+  const row = (over: Partial<Session>): Session =>
+    ({
+      id: 'edited',
+      title: 'Opening Plenary',
+      room: 'Main Hall',
+      day: 1,
+      status: SessionStatus.SCHEDULED,
+      startsAt: at('09:00'),
+      endsAt: at('10:00'),
+      speakers: [],
+      ...over,
+    }) as Session;
+
+  const build = (edited: Session, others: Session[] = []) => {
+    const qb = {
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue(others),
+    };
+    const sessions = {
+      findOne: jest.fn().mockResolvedValue(edited),
+      create: jest.fn().mockImplementation((v: Partial<Session>) => ({ ...v })),
+      save: jest
+        .fn()
+        .mockImplementation((v: Session | Session[]) =>
+          Promise.resolve(
+            Array.isArray(v) ? v : { ...row({}), ...v, id: v.id ?? 'new' },
+          ),
+        ),
+      delete: jest.fn().mockResolvedValue({}),
+      createQueryBuilder: jest.fn().mockReturnValue(qb),
+    };
+    const counting = {
+      countBy: jest.fn().mockResolvedValue(0),
+      delete: jest.fn(),
+    };
+    const realtime = {
+      emitGlobal: jest.fn(),
+      emit: jest.fn(),
+      emitToRoom: jest.fn(),
+    };
+    const notifications = { announce: jest.fn().mockResolvedValue({}) };
+    const reminders = {
+      add: jest.fn().mockResolvedValue({}),
+      remove: jest.fn().mockResolvedValue(1),
+    };
+    const redis = { set: jest.fn(), get: jest.fn() };
+    const service = new SessionsService(
+      sessions as any,
+      { findBy: jest.fn().mockResolvedValue([]) } as any,
+      counting as any,
+      counting as any,
+      counting as any,
+      counting as any,
+      realtime as any,
+      redis as any,
+      notifications as any,
+      reminders as any,
+    );
+    return { service, notifications };
+  };
+
+  const dto = {
+    title: 'Opening Plenary',
+    description: '',
+    day: 1,
+    startsAt: iso('09:00'),
+    endsAt: iso('10:00'),
+    room: 'Main Hall',
+    track: 'general',
+    type: 'Plenary',
+  } as any;
+
+  it('announces a new session with its slot in summit time', async () => {
+    const { service, notifications } = build(row({}));
+    await service.create(dto);
+    expect(notifications.announce).toHaveBeenCalledTimes(1);
+    expect(notifications.announce).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Opening Plenary',
+        body: 'Added to the programme · Tue 8 Sept 09:00–10:00 · Main Hall',
+        segment: AudienceSegment.ALL,
+        category: 'session-created',
+      }),
+    );
+  });
+
+  it('sends one summary for a bulk import, not one per row', async () => {
+    const { service, notifications } = build(row({}));
+    await service.createBulk([dto, dto, dto]);
+    expect(notifications.announce).toHaveBeenCalledTimes(1);
+    expect(notifications.announce).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Programme updated',
+        body: '3 sessions added. Check your agenda.',
+      }),
+    );
+  });
+
+  it('announces a time change for the edited session and each one it pushed', async () => {
+    const next = row({
+      id: 'next',
+      title: 'Panel',
+      startsAt: at('10:00'),
+      endsAt: at('11:00'),
+    });
+    const { service, notifications } = build(row({}), [next]);
+    await service.update('edited', { endsAt: iso('10:30') });
+    const bodies = notifications.announce.mock.calls.map((c) => c[0].body);
+    expect(bodies).toEqual([
+      'Schedule change · Tue 8 Sept 09:00–10:30 · Main Hall',
+      'Schedule change · Tue 8 Sept 10:30–11:30 · Main Hall',
+    ]);
+  });
+
+  it('stays quiet for a title-only edit', async () => {
+    const { service, notifications } = build(row({}));
+    await service.update('edited', { title: 'Renamed' });
+    expect(notifications.announce).not.toHaveBeenCalled();
+  });
+
+  it('announces a cancellation', async () => {
+    const { service, notifications } = build(row({}));
+    await service.remove('edited');
+    expect(notifications.announce).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Opening Plenary',
+        body: 'Cancelled · was Tue 8 Sept 09:00–10:00 · Main Hall',
+        category: 'session-cancelled',
+      }),
+    );
+  });
+
+  it('announces the speaker reveal, but not hiding them again', async () => {
+    const { service, notifications } = build(row({}));
+    await service.setSpeakersRevealed(true);
+    await service.setSpeakersRevealed(false);
+    expect(notifications.announce).toHaveBeenCalledTimes(1);
+    expect(notifications.announce).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Speakers announced',
+        category: 'speakers-revealed',
+      }),
+    );
+  });
+});
+
+/**
+ * The saved-session reminder is a delayed job per session. These pin down
+ * when it is (re)scheduled, the lead time, and when it is withdrawn.
+ */
+describe('SessionsService saved-session reminders', () => {
+  const at = (hhmm: string) => new Date(`2026-09-08T${hhmm}:00+01:00`);
+  const iso = (hhmm: string) => `2026-09-08T${hhmm}:00+01:00`;
+  // the clock reads 08:00 Abuja on the day
+  const NOW = at('08:00').getTime();
+  beforeEach(() => jest.spyOn(Date, 'now').mockReturnValue(NOW));
+  afterEach(() => jest.restoreAllMocks());
+
+  const row = (over: Partial<Session>): Session =>
+    ({
+      id: 'edited',
+      title: 'Opening Plenary',
+      room: 'Main Hall',
+      day: 1,
+      status: SessionStatus.SCHEDULED,
+      startsAt: at('09:00'),
+      endsAt: at('10:00'),
+      speakers: [],
+      ...over,
+    }) as Session;
+
+  const build = (edited: Session, others: Session[] = []) => {
+    const qb = {
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue(others),
+    };
+    const sessions = {
+      findOne: jest.fn().mockResolvedValue(edited),
+      find: jest.fn().mockResolvedValue(others),
+      create: jest.fn().mockImplementation((v: Partial<Session>) => ({ ...v })),
+      save: jest
+        .fn()
+        .mockImplementation((v: Session | Session[]) =>
+          Promise.resolve(
+            Array.isArray(v) ? v : { ...row({}), ...v, id: v.id ?? 'new' },
+          ),
+        ),
+      delete: jest.fn().mockResolvedValue({}),
+      createQueryBuilder: jest.fn().mockReturnValue(qb),
+    };
+    const counting = {
+      countBy: jest.fn().mockResolvedValue(0),
+      delete: jest.fn(),
+    };
+    const realtime = {
+      emitGlobal: jest.fn(),
+      emit: jest.fn(),
+      emitToRoom: jest.fn(),
+    };
+    const reminders = {
+      add: jest.fn().mockResolvedValue({}),
+      remove: jest.fn().mockResolvedValue(1),
+    };
+    const service = new SessionsService(
+      sessions as any,
+      { findBy: jest.fn().mockResolvedValue([]) } as any,
+      counting as any,
+      counting as any,
+      counting as any,
+      counting as any,
+      realtime as any,
+      { set: jest.fn(), get: jest.fn() } as any,
+      { announce: jest.fn().mockResolvedValue({}) } as any,
+      reminders as any,
+    );
+    return { service, reminders, sessions };
+  };
+  const flush = () => new Promise((r) => setImmediate(r));
+
+  it('schedules a job 15 minutes before a new session, keyed by session id', async () => {
+    const { service, reminders } = build(row({}));
+    await service.create({
+      title: 'Opening Plenary',
+      description: '',
+      day: 1,
+      room: 'Main Hall',
+      startsAt: iso('09:00'),
+      endsAt: iso('10:00'),
+      track: 'general',
+      type: 'Plenary',
+    } as any);
+    await flush();
+    expect(reminders.remove).toHaveBeenCalledWith('reminder-new');
+    expect(reminders.add).toHaveBeenCalledWith(
+      'remind',
+      { sessionId: 'new', startsAt: at('09:00').toISOString() },
+      expect.objectContaining({ jobId: 'reminder-new', delay: 45 * 60_000 }),
+    );
+  });
+
+  it('reschedules the edited session and each one it pushed', async () => {
+    const next = row({
+      id: 'next',
+      title: 'Panel',
+      startsAt: at('10:00'),
+      endsAt: at('11:00'),
+    });
+    const { service, reminders } = build(row({}), [next]);
+    await service.update('edited', { endsAt: iso('10:30') });
+    await flush();
+    const ids = reminders.add.mock.calls.map((c) => c[2].jobId);
+    expect(ids).toEqual(['reminder-edited', 'reminder-next']);
+    expect(reminders.add.mock.calls[1][1].startsAt).toBe(
+      at('10:30').toISOString(),
+    );
+  });
+
+  it('does not schedule when the start is already inside the lead time', async () => {
+    const { service, reminders } = build(row({}));
+    await service.update('edited', {
+      startsAt: iso('08:10'),
+      endsAt: iso('09:10'),
+    });
+    await flush();
+    expect(reminders.remove).toHaveBeenCalledWith('reminder-edited');
+    expect(reminders.add).not.toHaveBeenCalled();
+  });
+
+  it('withdraws the reminder when a session goes live or is deleted', async () => {
+    const { service, reminders } = build(row({}));
+    await service.setStatus('edited', SessionStatus.LIVE);
+    await service.remove('edited');
+    await flush();
+    expect(reminders.remove).toHaveBeenCalledTimes(2);
+    expect(reminders.add).not.toHaveBeenCalled();
+  });
+
+  it('re-issues jobs for every upcoming session on boot', async () => {
+    const upcoming = [
+      row({ id: 'a' }),
+      row({ id: 'b', startsAt: at('11:00'), endsAt: at('12:00') }),
+    ];
+    const { service, reminders, sessions } = build(row({}), upcoming);
+    await service.onApplicationBootstrap();
+    expect(sessions.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ status: SessionStatus.SCHEDULED }),
+      }),
+    );
+    expect(reminders.add.mock.calls.map((c) => c[2].jobId)).toEqual([
+      'reminder-a',
+      'reminder-b',
+    ]);
   });
 });

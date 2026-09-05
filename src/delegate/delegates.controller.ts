@@ -295,6 +295,21 @@ export class DelegatesController {
     return this.service.addConnection(user.id, toDelegateId);
   }
 
+  @Delete(':id/connect')
+  @HttpCode(204)
+  @ApiOperation({
+    summary: 'Remove a delegate from your network (both directions)',
+  })
+  @ApiParam({ name: 'id', description: 'Delegate ID', type: String })
+  @ApiResponse({ status: 204, description: 'Connection removed' })
+  @ApiResponse({ status: 404, description: 'Delegate is not in your network' })
+  async disconnect(
+    @Param('id', new ParseUUIDPipe()) otherId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    await this.service.removeConnection(user.id, otherId);
+  }
+
   @Get('me/connections')
   @ApiOperation({
     summary: 'List delegates in your network (the "N in your network" counter)',

@@ -4,10 +4,14 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  OnApplicationBootstrap,
 } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
+import type { ReminderJob } from './session-reminders.processor';
 import { InjectRepository } from '@nestjs/typeorm';
 import Redis from 'ioredis';
-import { In, Repository } from 'typeorm';
+import { In, MoreThan, Repository } from 'typeorm';
 import { REDIS } from '../common/redis/redis.module';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { QuerySessionsDto } from './dto/query-sessions.dto';
@@ -28,7 +32,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { AudienceSegment } from '../notifications/entities/notification.entity';
 
 @Injectable()
-export class SessionsService {
+export class SessionsService implements OnApplicationBootstrap {
   private readonly logger = new Logger(SessionsService.name);
 
   constructor(
@@ -56,7 +60,102 @@ export class SessionsService {
     private readonly redis: Redis,
 
     private readonly notifications: NotificationsService,
+
+    @InjectQueue('session-reminders')
+    private readonly reminders: Queue<ReminderJob>,
   ) {}
+
+  /* --------------------------------------------- saved-session reminders (FR-04) */
+
+  static readonly REMINDER_LEAD_MS = 15 * 60_000;
+
+  /**
+   * One delayed job per session, keyed by the session id so scheduling again
+   * replaces rather than duplicates. Anything not scheduled - live already,
+   * completed - or starting within the lead time gets no job. Callers fire
+   * and forget: a reminder that cannot be queued must not fail the edit.
+   */
+  private async scheduleReminder(s: Session): Promise<void> {
+    const jobId = `reminder-${s.id}`;
+    await this.reminders.remove(jobId);
+    const delay =
+      s.startsAt.getTime() - SessionsService.REMINDER_LEAD_MS - Date.now();
+    if (s.status !== SessionStatus.SCHEDULED || delay <= 0) return;
+    await this.reminders.add(
+      'remind',
+      { sessionId: s.id, startsAt: s.startsAt.toISOString() },
+      { jobId, delay, removeOnComplete: true, removeOnFail: true },
+    );
+  }
+
+  private remind(...sessions: Session[]): void {
+    for (const s of sessions) {
+      void this.scheduleReminder(s).catch((e) =>
+        this.logger.warn(`reminder not scheduled for "${s.title}": ${e}`),
+      );
+    }
+  }
+
+  private cancelReminder(id: string): void {
+    void this.reminders
+      .remove(`reminder-${id}`)
+      .catch((e) => this.logger.warn(`reminder not cancelled for ${id}: ${e}`));
+  }
+
+  /**
+   * Sessions that existed before this instance came up have no job yet, and
+   * Redis may have been flushed. Re-issuing for every upcoming session is
+   * idempotent thanks to the fixed job id, so it is safe on every boot and on
+   * every instance.
+   */
+  async onApplicationBootstrap(): Promise<void> {
+    try {
+      const upcoming = await this.sessions.find({
+        where: {
+          status: SessionStatus.SCHEDULED,
+          startsAt: MoreThan(new Date()),
+        },
+      });
+      await Promise.all(upcoming.map((s) => this.scheduleReminder(s)));
+      this.logger.log(`reminders scheduled for ${upcoming.length} session(s)`);
+    } catch (e) {
+      this.logger.warn(`reminders not rescheduled on boot: ${e}`);
+    }
+  }
+
+  /* --------------------------------------------- delegate notifications (FR-08) */
+
+  /**
+   * Every change to the programme goes to every delegate as a push, and lands
+   * in their inbox. Queued through the notifications module, never awaited:
+   * the push goes out from the worker, and a failure to queue it must not
+   * fail the edit the operator just made.
+   */
+  private broadcast(title: string, body: string, category: string): void {
+    void this.notifications
+      .announce({ title, body, segment: AudienceSegment.ALL, category })
+      .catch((e) =>
+        this.logger.warn(`push not queued for "${title}" (${category}): ${e}`),
+      );
+  }
+
+  private static readonly whenFmt = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Africa/Lagos',
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  });
+  private static readonly timeFmt = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Africa/Lagos',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  });
+
+  /** "Tue 8 Sept 09:00–10:00 · Main Hall", in summit time. */
+  private static slot(s: Session): string {
+    return `${SessionsService.whenFmt.format(s.startsAt)} ${SessionsService.timeFmt.format(s.startsAt)}–${SessionsService.timeFmt.format(s.endsAt)} · ${s.room}`;
+  }
 
   /* --------------------------------------------- speaker reveal (FR-02/03) */
 
@@ -82,6 +181,13 @@ export class SessionsService {
     // Global, not per-session: the flag is the whole program's, and a delegate
     // sitting on any screen should see the line-up appear without relaunching.
     this.realtime.emitGlobal('speakers:revealed', { revealed });
+    if (revealed) {
+      this.broadcast(
+        'Speakers announced',
+        'The full speaker line-up is now in the app.',
+        'speakers-revealed',
+      );
+    }
     return { revealed };
   }
 
@@ -232,7 +338,7 @@ export class SessionsService {
     return session;
   }
 
-  async create(dto: CreateSessionDto): Promise<Session> {
+  async create(dto: CreateSessionDto, announce = true): Promise<Session> {
     const { speakerIds, ...data } = dto;
     const session = this.sessions.create({
       ...data,
@@ -248,11 +354,34 @@ export class SessionsService {
     // Every schedule on screen refetches: the delegate agenda, the venue
     // board, and any other console tab.
     this.realtime.emitGlobal('session:created', { sessionId: saved.id });
+    this.remind(saved);
+    if (announce) {
+      this.broadcast(
+        saved.title,
+        `Added to the programme · ${SessionsService.slot(saved)}`,
+        'session-created',
+      );
+    }
     return saved;
   }
 
+  /**
+   * One push for the whole batch, not one per row: an agenda import is sixty
+   * sessions, and sixty buzzes teaches a delegate to switch notifications off
+   * before the summit starts.
+   */
   async createBulk(dtos: CreateSessionDto[]): Promise<Session[]> {
-    return Promise.all(dtos.map((dto) => this.create(dto)));
+    const created = await Promise.all(
+      dtos.map((dto) => this.create(dto, false)),
+    );
+    if (created.length > 0) {
+      this.broadcast(
+        'Programme updated',
+        `${created.length} session${created.length === 1 ? '' : 's'} added. Check your agenda.`,
+        'session-created',
+      );
+    }
+    return created;
   }
 
   async update(id: string, dto: UpdateSessionDto): Promise<Session> {
@@ -301,6 +430,24 @@ export class SessionsService {
     // A plain edit - a new time, room or title - has to reach every screen
     // too, not only the ones that involved a push.
     this.realtime.emitGlobal('session:updated', { sessionId: saved.id });
+
+    // Delegates hear about a session moving, theirs or one it pushed. A
+    // retitled description is not worth a buzz.
+    if (placed) {
+      this.remind(saved, ...pushed);
+      this.broadcast(
+        saved.title,
+        `Schedule change · ${SessionsService.slot(saved)}`,
+        'session-updated',
+      );
+      for (const s of pushed) {
+        this.broadcast(
+          s.title,
+          `Schedule change · ${SessionsService.slot(s)}`,
+          'session-updated',
+        );
+      }
+    }
 
     // status is a transition, not a field write — reuse the one path
     // that emits to the room and trips the audit interceptor
@@ -399,17 +546,11 @@ export class SessionsService {
     // push goes out from the worker, and a failure to queue it must not
     // fail the status change the operator just made.
     if (wentLive) {
-      void this.notifications
-        .announce({
-          title: saved.title,
-          body: `Now live in ${saved.room}`,
-          segment: AudienceSegment.ALL,
-          category: 'session-live',
-        })
-        .catch((e) =>
-          this.logger.warn(`live push not queued for "${saved.title}": ${e}`),
-        );
+      this.broadcast(saved.title, `Now live in ${saved.room}`, 'session-live');
     }
+    // a session that is live or over no longer "starts in 15 minutes"
+    if (status !== SessionStatus.SCHEDULED) this.cancelReminder(id);
+    else this.remind(saved);
 
     this.realtime.emitToRoom(Rooms.session(id), 'session:status', {
       sessionId: id,
@@ -471,6 +612,12 @@ export class SessionsService {
     // global, not the session room: a delegate looking at the programme is not
     // in that room, and their agenda has to lose the session too
     this.realtime.emitGlobal('session:deleted', { sessionId: id });
+    this.cancelReminder(id);
+    this.broadcast(
+      session.title,
+      `Cancelled · was ${SessionsService.slot(session)}`,
+      'session-cancelled',
+    );
   }
 
   async bookmark(delegateId: string, sessionId: string): Promise<void> {

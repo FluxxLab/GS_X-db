@@ -730,6 +730,38 @@ export class DelegatesService {
     return items.map((i, idx) => ({ ...i, delegate: delegates[idx] }));
   }
 
+  /**
+   * Take a delegate out of your network.
+   *
+   * The pair goes, not one direction of it: a connection is shown to both
+   * sides as "in your network", so leaving half a row behind would have them
+   * still seeing you after you removed them. Rows are matched both ways
+   * round because addConnection writes them in caller order.
+   *
+   * The other party's screen is refreshed over the socket but nobody is
+   * notified - being dropped from a network is not news anyone wants pushed.
+   */
+  async removeConnection(callerId: string, otherId: string): Promise<void> {
+    if (callerId === otherId) {
+      throw new BadRequestException('You cannot remove yourself');
+    }
+    const result = await this.connections
+      .createQueryBuilder()
+      .delete()
+      .where(
+        '(fromDelegateId = :a AND toDelegateId = :b) OR (fromDelegateId = :b AND toDelegateId = :a)',
+        { a: callerId, b: otherId },
+      )
+      .execute();
+    if (!result.affected) {
+      throw new NotFoundException('This delegate is not in your network');
+    }
+    this.realtime.emitToRoom(Rooms.network(otherId), 'network:updated', {
+      type: 'removed',
+      fromDelegateId: callerId,
+    });
+  }
+
   async countConnections(delegateId: string): Promise<number> {
     const rows = await this.connections
       .createQueryBuilder('c')
