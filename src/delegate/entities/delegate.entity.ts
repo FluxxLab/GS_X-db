@@ -11,6 +11,13 @@ export enum AccessTier {
   VVIP = 'vvip',
   PRESS = 'press',
   ADMIN = 'admin',
+  /**
+   * Caption operators: the console shows them the Capture tab and nothing
+   * else, and the API lets them publish and clear captions and nothing else.
+   * A tier rather than a flag so the one RolesGuard and the one JWT claim
+   * carry it without a second mechanism.
+   */
+  SESSION_ADMIN = 'session_admin',
 }
 
 @Entity('delegates')

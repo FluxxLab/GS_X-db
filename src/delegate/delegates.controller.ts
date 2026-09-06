@@ -276,7 +276,7 @@ export class DelegatesController {
     @Body() dto: SetAdminDto,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.service.setAdmin(id, dto.admin, user.id);
+    return this.service.setAdmin(id, dto.admin, user.id, dto.role);
   }
 
   @Post(':id/connect')

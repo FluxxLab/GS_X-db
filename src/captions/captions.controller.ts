@@ -62,7 +62,7 @@ export class CaptionsController {
   }
 
   @Post('rooms/:room/publish-token')
-  @Roles(AccessTier.ADMIN)
+  @Roles(AccessTier.ADMIN, AccessTier.SESSION_ADMIN)
   @ApiOperation({ summary: 'Token to publish captions to a live session' })
   @ApiResponse({
     status: 200,
@@ -81,7 +81,7 @@ export class CaptionsController {
   }
 
   @Get(':sessionId/transcript')
-  @Roles(AccessTier.ADMIN)
+  @Roles(AccessTier.ADMIN, AccessTier.SESSION_ADMIN)
   @ApiOperation({ summary: 'full caption transcript for a session(admin' })
   transcript(
     @Param('sessionId', ParseUUIDPipe) sessionId: string,
@@ -112,7 +112,7 @@ export class CaptionsController {
   }
 
   @Delete(':sessionId/captions')
-  @Roles(AccessTier.ADMIN)
+  @Roles(AccessTier.ADMIN, AccessTier.SESSION_ADMIN)
   @Audit({
     type: 'captions_cleared',
     description: 'Session captions cleared',
@@ -128,7 +128,7 @@ export class CaptionsController {
   }
 
   @Get(':sessionId/transcript/export')
-  @Roles(AccessTier.ADMIN)
+  @Roles(AccessTier.ADMIN, AccessTier.SESSION_ADMIN)
   @Audit({
     type: 'transcript_exported',
     description: 'Session transcript exported',

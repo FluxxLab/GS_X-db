@@ -509,7 +509,10 @@ export class DelegatesService {
     const qb = this.delegateRepository
       .createQueryBuilder('d')
       .where('d.flagged = :f', { f: false })
-      .andWhere('d.accessTier != :admin', { admin: AccessTier.ADMIN });
+      // staff are not delegates to network with
+      .andWhere('d.accessTier NOT IN (:...staff)', {
+        staff: [AccessTier.ADMIN, AccessTier.SESSION_ADMIN],
+      });
 
     if (q) {
       qb.andWhere(
@@ -548,18 +551,25 @@ export class DelegatesService {
   }
 
   listAdmins(): Promise<Delegate[]> {
-    return this.delegateRepository.findBy({ accessTier: AccessTier.ADMIN });
+    // both kinds of staff, so the Team page can show and revoke either
+    return this.delegateRepository.find({
+      where: { accessTier: In([AccessTier.ADMIN, AccessTier.SESSION_ADMIN]) },
+      order: { accessTier: 'ASC', name: 'ASC' },
+    });
   }
 
   async setAdmin(
     id: string,
     grant: boolean,
     actingUserId: string,
+    role: AccessTier.ADMIN | AccessTier.SESSION_ADMIN = AccessTier.ADMIN,
   ): Promise<Delegate> {
     const delegate = await this.delegateRepository.findOneBy({ id });
     if (!delegate) throw new NotFoundException('Delegate not found');
 
-    if (!grant) {
+    // The lock-out guards protect full admins only: a session admin cannot
+    // run the console, so losing the last one loses nothing.
+    if (!grant && delegate.accessTier === AccessTier.ADMIN) {
       // Guard 1: locking yourself out with one click
       if (id === actingUserId) {
         throw new BadRequestException(
@@ -575,7 +585,7 @@ export class DelegatesService {
       }
     }
 
-    delegate.accessTier = grant ? AccessTier.ADMIN : AccessTier.STANDARD;
+    delegate.accessTier = grant ? role : AccessTier.STANDARD;
     return this.delegateRepository.save(delegate);
   }
 
