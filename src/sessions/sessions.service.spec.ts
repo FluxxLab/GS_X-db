@@ -434,13 +434,19 @@ describe('SessionsService programme notifications', () => {
     const removeSpy = jest
       .spyOn(service, 'remove')
       .mockImplementation(async (id: string) => {
-        if (id === 'busy') throw new ConflictException('"Busy" has 3 comment(s).');
+        if (id === 'busy')
+          throw new ConflictException('"Busy" has 3 comment(s).');
         if (id === 'gone') throw new NotFoundException();
       });
     await expect(
       service.removeMany(['a', 'busy', 'gone', 'b']),
     ).rejects.toThrow('1 of 4 not deleted. "Busy" has 3 comment(s).');
-    expect(removeSpy.mock.calls.map((c) => c[0])).toEqual(['a', 'busy', 'gone', 'b']);
+    expect(removeSpy.mock.calls.map((c) => c[0])).toEqual([
+      'a',
+      'busy',
+      'gone',
+      'b',
+    ]);
   });
 
   it('bulk delete with force passes force through and resolves', async () => {

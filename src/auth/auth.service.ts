@@ -41,7 +41,11 @@ export class AuthService {
     private readonly securityService: SecurityService,
   ) {}
 
-  async login(email: string, password: string, ctx: RequestContext) {
+  async login(rawEmail: string, password: string, ctx: RequestContext) {
+    // Registration stores the address lower-cased; login has to match it the
+    // same way. An iPad keyboard capitalising the first letter was enough to
+    // lock App Review out of the demo account.
+    const email = rawEmail.trim().toLowerCase();
     const delegate = await this.delegate.findByEmailForAuth(email);
 
     /**
