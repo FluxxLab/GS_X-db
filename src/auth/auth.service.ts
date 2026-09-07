@@ -52,7 +52,16 @@ export class AuthService {
      * Same error for invalid email and  password
      * do not leak which
      */
-    if (!delegate || !(await bcrypt.compare(password, delegate.passwordHash))) {
+    // Exact first; then without surrounding whitespace, because a tablet
+    // keyboard appends a space after an autocompleted word and a password
+    // typed correctly plus one invisible character must still work. A
+    // password that genuinely ends in a space still matches on the first try.
+    const matches =
+      !!delegate &&
+      ((await bcrypt.compare(password, delegate.passwordHash)) ||
+        (password !== password.trim() &&
+          (await bcrypt.compare(password.trim(), delegate.passwordHash))));
+    if (!matches) {
       throw new UnauthorizedException('Invalid email or password');
     }
     return this.issueTokens(delegate, ctx);
