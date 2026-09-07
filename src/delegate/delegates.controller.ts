@@ -36,6 +36,7 @@ import type { Response } from 'express';
 import { EventSeverity } from '../security/entities/security-event.entity';
 import { ListDelegatesDto } from './dto/list-delegates.dto';
 import { SetAdminDto } from './entities/set-admin.dto';
+import { CreateStaffDto } from './dto/create-staff.dto';
 import { DelegateDirectoryDto } from './dto/delegate-directory.dto';
 import { ListDirectoryDto } from './dto/list-directory.dto';
 import { SendDirectMessageDto } from './dto/send-direct-message.dto';
@@ -261,6 +262,27 @@ export class DelegatesController {
   @ApiOperation({ summary: 'List accounts with admin access' })
   listAdmins() {
     return this.service.listAdmins();
+  }
+
+  // Single segment, declared before ':id/...' like approve-all.
+  @Post('staff')
+  @Roles(AccessTier.ADMIN)
+  @ApiOperation({
+    summary:
+      'Create a staff login (admin or session admin) directly, with no registration or code',
+  })
+  @ApiResponse({ status: 201, description: 'Staff account created' })
+  @ApiResponse({
+    status: 409,
+    description: 'An account with this email already exists',
+  })
+  @Audit({
+    type: 'staff_account_created',
+    description: 'Staff account created by admin',
+    severity: EventSeverity.WARNING,
+  })
+  createStaff(@Body() dto: CreateStaffDto) {
+    return this.service.createStaff(dto);
   }
 
   @Patch(':id/admin')

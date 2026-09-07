@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   UnauthorizedException,
   Logger,
@@ -19,6 +20,7 @@ import {
   UpdateRegistrationEntryDto,
 } from './dto/create-delegate.dto';
 import { UpdateMeDto } from './dto/update-me.dto';
+import { CreateStaffDto } from './dto/create-staff.dto';
 import { DelegateDirectoryDto } from './dto/delegate-directory.dto';
 import { ListDirectoryDto } from './dto/list-directory.dto';
 import { DelegateConnection } from './entities/delegate-connection.entity';
@@ -556,6 +558,32 @@ export class DelegatesService {
       where: { accessTier: In([AccessTier.ADMIN, AccessTier.SESSION_ADMIN]) },
       order: { accessTier: 'ASC', name: 'ASC' },
     });
+  }
+
+  /**
+   * A staff login, created straight into its role. Approved from the start
+   * (the approval gate is for self-registered delegates), consent stamped
+   * now because an admin is creating it on the person's behalf, and the
+   * password hashed with the same cost as registration so it is no weaker.
+   */
+  async createStaff(dto: CreateStaffDto): Promise<Delegate> {
+    const email = dto.email.trim().toLowerCase();
+    if (await this.findByEmailForAuth(email)) {
+      throw new ConflictException('An account with this email already exists');
+    }
+    const created = await this.createDelegate({
+      name: dto.name.trim(),
+      email,
+      passwordHash: await bcrypt.hash(dto.password, 12),
+      accessTier: dto.role,
+      pendingReview: false,
+      phone: null,
+      consentAt: new Date(),
+    });
+    // never hand the hash back, even to an admin
+    const { passwordHash: _hash, ...safe } = created;
+    void _hash;
+    return safe as Delegate;
   }
 
   async setAdmin(

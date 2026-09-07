@@ -613,11 +613,38 @@ export class SessionsService implements OnApplicationBootstrap {
     // in that room, and their agenda has to lose the session too
     this.realtime.emitGlobal('session:deleted', { sessionId: id });
     this.cancelReminder(id);
-    this.broadcast(
-      session.title,
-      `Cancelled · was ${SessionsService.slot(session)}`,
-      'session-cancelled',
-    );
+    // No push for a deletion. Most deletions are housekeeping - test rows,
+    // duplicates from an import - and a "cancelled" buzz for those would
+    // only alarm people. A real cancellation is announced by hand.
+  }
+
+  /**
+   * Delete a batch. Each session is judged on its own: the ones without
+   * activity go, and the ones the single-delete rule would refuse are
+   * reported together in one 409 naming each, so the operator can retry the
+   * batch with `force` knowing exactly what that destroys. A session that
+   * is already gone is skipped rather than failing the batch, which is what
+   * makes that retry safe.
+   */
+  async removeMany(ids: string[], force = false): Promise<void> {
+    const refused: string[] = [];
+    for (const id of ids) {
+      try {
+        await this.remove(id, force);
+      } catch (e) {
+        if (e instanceof NotFoundException) continue;
+        if (e instanceof ConflictException) {
+          refused.push(e.message);
+          continue;
+        }
+        throw e;
+      }
+    }
+    if (refused.length > 0) {
+      throw new ConflictException(
+        `${refused.length} of ${ids.length} not deleted. ${refused.join(' ')}`,
+      );
+    }
   }
 
   async bookmark(delegateId: string, sessionId: string): Promise<void> {

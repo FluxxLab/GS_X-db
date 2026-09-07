@@ -22,6 +22,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { AccessTier } from '../delegate/entities/delegate.entity';
+import { BulkDeleteSessionsDto } from './dto/bulk-delete-sessions.dto';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { QuerySessionsDto } from './dto/query-sessions.dto';
 import { UpdateSessionDto } from './dto/update-session.dto';
@@ -136,6 +137,28 @@ export class SessionController {
     @Body() dto: UpdateSessionStatusDto,
   ) {
     return this.service.setStatus(id, dto.status);
+  }
+
+  /**
+   * Declared before the :id routes for the same reason as `bulk`: a literal
+   * path segment must not be swallowed by the UUID param.
+   */
+  @Post('bulk-delete')
+  @HttpCode(204)
+  @Roles(AccessTier.ADMIN)
+  @Audit({ type: 'session_deleted', description: 'Sessions deleted in bulk' })
+  @ApiOperation({
+    summary:
+      'Delete several sessions at once, each with its bookmarks, attendance, comments and transcript',
+  })
+  @ApiResponse({ status: 204, description: 'All deleted' })
+  @ApiResponse({
+    status: 409,
+    description:
+      'Some sessions have activity and were kept; the message names them. Retry with force: true',
+  })
+  async removeMany(@Body() dto: BulkDeleteSessionsDto) {
+    await this.service.removeMany(dto.ids, dto.force ?? false);
   }
 
   @Delete(':id')

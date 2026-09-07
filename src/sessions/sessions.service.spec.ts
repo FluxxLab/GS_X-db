@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { SessionsService } from './sessions.service';
 import { Session, SessionStatus } from './entities/session.entity';
 import { AudienceSegment } from '../notifications/entities/notification.entity';
@@ -423,16 +423,32 @@ describe('SessionsService programme notifications', () => {
     expect(notifications.announce).not.toHaveBeenCalled();
   });
 
-  it('announces a cancellation', async () => {
+  it('stays quiet on a deletion', async () => {
     const { service, notifications } = build(row({}));
     await service.remove('edited');
-    expect(notifications.announce).toHaveBeenCalledWith(
-      expect.objectContaining({
-        title: 'Opening Plenary',
-        body: 'Cancelled · was Tue 8 Sept 09:00–10:00 · Main Hall',
-        category: 'session-cancelled',
-      }),
-    );
+    expect(notifications.announce).not.toHaveBeenCalled();
+  });
+
+  it('bulk delete removes what it can and names what it refused', async () => {
+    const { service } = build(row({}));
+    const removeSpy = jest
+      .spyOn(service, 'remove')
+      .mockImplementation(async (id: string) => {
+        if (id === 'busy') throw new ConflictException('"Busy" has 3 comment(s).');
+        if (id === 'gone') throw new NotFoundException();
+      });
+    await expect(
+      service.removeMany(['a', 'busy', 'gone', 'b']),
+    ).rejects.toThrow('1 of 4 not deleted. "Busy" has 3 comment(s).');
+    expect(removeSpy.mock.calls.map((c) => c[0])).toEqual(['a', 'busy', 'gone', 'b']);
+  });
+
+  it('bulk delete with force passes force through and resolves', async () => {
+    const { service } = build(row({}));
+    const removeSpy = jest.spyOn(service, 'remove').mockResolvedValue();
+    await expect(service.removeMany(['a', 'b'], true)).resolves.toBeUndefined();
+    expect(removeSpy).toHaveBeenCalledWith('a', true);
+    expect(removeSpy).toHaveBeenCalledWith('b', true);
   });
 
   it('announces the speaker reveal, but not hiding them again', async () => {
