@@ -1,3 +1,4 @@
+import { AccessTier } from '../delegate/entities/delegate.entity';
 import {
   ConnectedSocket,
   MessageBody,
@@ -55,14 +56,24 @@ export class CaptionsGateway {
   }
 
   /**
-   * capture side (admin/ capture page)
+   * capture side (admin / capture page)
+   *
+   * Session admins exist for exactly this: the console shows them the
+   * Capture tab and the REST side already issues them a publish token, so
+   * the socket has to let them start a room and stream audio too. Checking
+   * for the literal 'admin' here was what stopped them.
    */
+  private static canCapture(socket: Socket): boolean {
+    const role = (socket.data.user as { role?: string } | undefined)?.role;
+    return role === AccessTier.ADMIN || role === AccessTier.SESSION_ADMIN;
+  }
+
   @SubscribeMessage('capture:start')
   async startCapture(
     @ConnectedSocket() socket: Socket,
     @MessageBody() body: string | { room: string; diarise?: boolean },
   ) {
-    if (socket.data.user?.role !== 'admin') return { error: 'forbidden' };
+    if (!CaptionsGateway.canCapture(socket)) return { error: 'forbidden' };
 
     // Older capture pages send a bare room string, which means diarise.
     const room = typeof body === 'string' ? body : body.room;
@@ -76,7 +87,7 @@ export class CaptionsGateway {
   @SubscribeMessage('capture:audio')
   audio(@ConnectedSocket() socket: Socket, @MessageBody() chunk: Buffer) {
     const room = socket.data.captureRoom as string | undefined;
-    if (room && socket.data.user?.role === 'admin') {
+    if (room && CaptionsGateway.canCapture(socket)) {
       this.captionsService.sendAudio(room, chunk);
     }
   }
