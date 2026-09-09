@@ -101,8 +101,22 @@ export class OtpService {
     }
   }
 
-  async assertValid(rawEmail: string, code: string): Promise<OtpChannel> {
+  /**
+   * Check a code without spending it.
+   *
+   * The code used to be deleted here, on the first match. Registration
+   * checks several other things after the code - that the email is not
+   * already an account, that an invite code is real, that a pre-registered
+   * email was verified by email - and any of those failing left the
+   * delegate holding a code the server had already thrown away. Their next
+   * try, with the same code from the same email, was "invalid or expired",
+   * which is the opposite of what happened. So the check only reads; the
+   * caller calls `consume` once the thing the code was for has succeeded.
+   * Attempts are still counted here, so guessing stays capped.
+   */
+  async assertValid(rawEmail: string, rawCode: string): Promise<OtpChannel> {
     const email = rawEmail.toLowerCase().trim();
+    const code = rawCode.trim();
 
     let attempts: number;
     try {
@@ -138,15 +152,20 @@ export class OtpService {
 
     const parsed = JSON.parse(stored) as { code: string; channel: OtpChannel };
     if (parsed.code !== code) {
-      throw new BadRequestException('invalid or expired code');
-    }
-
-    try {
-      await this.redis.del(`otp:code:${email}`, `otp:attempts:${email}`);
-    } catch {
-      // ignore cleanup error
+      throw new BadRequestException('Invalid or expired code');
     }
 
     return parsed.channel;
+  }
+
+  /** Spend the code: the action it authorised has succeeded. */
+  async consume(rawEmail: string): Promise<void> {
+    const email = rawEmail.toLowerCase().trim();
+    try {
+      await this.redis.del(`otp:code:${email}`, `otp:attempts:${email}`);
+    } catch {
+      // the code expires on its own; a failed cleanup is not worth failing
+      // the registration that just succeeded
+    }
   }
 }

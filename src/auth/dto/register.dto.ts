@@ -1,3 +1,5 @@
+import { Transform } from 'class-transformer';
+import { normalisePhone } from 'src/common/phone';
 import {
   IsBoolean,
   IsEmail,
@@ -40,9 +42,13 @@ export class RegisterDto {
   @Length(6, 6)
   otp: string;
 
-  @ApiPropertyOptional({ example: '+2349030000000' })
+  @ApiPropertyOptional({ example: '08012345678 or +2349030000000' })
   @IsString()
   @IsOptional()
+  // stored in E.164 whichever way the delegate wrote it - see common/phone.ts
+  @Transform(({ value }) =>
+    typeof value === 'string' ? normalisePhone(value) : value,
+  )
   phone?: string;
 
   @ApiProperty({

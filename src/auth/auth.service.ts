@@ -227,6 +227,7 @@ export class AuthService {
       delegate.id,
       await bcrypt.hash(newPassword, 12),
     );
+    await this.otpService.consume(email);
     await this.refreshTokenRepository.update(
       { userId: delegate.id, revokedAt: IsNull(), consumedAt: IsNull() },
       { revokedAt: new Date() },
@@ -266,12 +267,25 @@ export class AuthService {
       email,
       passwordHash: await bcrypt.hash(dto.password, 12),
       accessTier: entry?.assignedTier ?? AccessTier.STANDARD,
-      pendingReview: !entry,
+      /**
+       * Everyone who registers is in.
+       *
+       * The gate was built for a curated guest list: anyone whose email did
+       * not match the registration list waited for an organiser to approve
+       * them. In the hall on the day that meant delegates standing at the
+       * desk unable to open the app while someone found a laptop, so it is
+       * off. The registration list still decides the access tier, which is
+       * what actually controls what a delegate can see; an organiser can
+       * still withdraw access afterwards from the Delegates page.
+       */
+      pendingReview: false,
       phone: dto.phone ?? null,
       consentAt: new Date(),
     });
 
     if (entry) await this.delegate.claimRegistration(entry.id, delegate.id);
+    // the account exists; only now is the code spent
+    await this.otpService.consume(email);
 
     await this.securityService.record({
       type: 'delegate_registered',
