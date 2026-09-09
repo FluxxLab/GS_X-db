@@ -277,8 +277,16 @@ export class DeepTranscriptionProvider implements TranscriptionProvider {
     conn.on('error', (e) =>
       this.logger.error(`Deepgram error (${opts.room}): ${e.message}`),
     );
-    conn.on('close', () => {
-      this.logger.warn(`Deepgram stream closed (${opts.room})`);
+    conn.on('close', (event) => {
+      /**
+       * The code is the whole diagnosis. 1000 is a clean close, 1011 with
+       * NET-0001 means Deepgram received no decodable audio for ten seconds
+       * (a container without its header looks exactly like silence), and
+       * anything in the 4xxx range is an account or parameter problem.
+       */
+      this.logger.warn(
+        `Deepgram stream closed (${opts.room}): code=${event?.code ?? 'none'} reason=${event?.reason || 'none'}`,
+      );
       onClose();
     });
 
