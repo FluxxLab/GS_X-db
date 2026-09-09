@@ -128,6 +128,81 @@ export class DeepTranscriptionProvider implements TranscriptionProvider {
     opts: { room: string; keywords: string[]; diarise?: boolean },
     onTranscript: (event: TranscriptEvent) => void,
   ): Promise<TranscriptionStream> {
+    /**
+     * Deepgram's socket does not stay open for a whole summit day. It closes
+     * on its own idle timeout, on a network blip between us and them, and on
+     * their side during a deploy. Until now that was only logged: audio kept
+     * being written into a dead socket and not one caption arrived again
+     * until the operator stopped and restarted capture at the desk, which is
+     * exactly what the caption desk reported on 9 September 2026.
+     *
+     * So the stream reopens itself. `current` is whatever connection is live
+     * now, `closing` tells a deliberate shutdown apart from a drop, and the
+     * handle handed back always writes to the current connection.
+     */
+    let current: Awaited<ReturnType<typeof this.connect>> | null = null;
+    let closing = false;
+    let attempt = 0;
+    let keepAlive: NodeJS.Timeout | null = null;
+
+    const open = async (): Promise<void> => {
+      const conn = await this.connect(opts, onTranscript, () => {
+        // unexpected close: back off a little, then take the room back
+        if (closing) return;
+        const wait = Math.min(10_000, 500 * 2 ** attempt++);
+        this.logger.warn(
+          `Deepgram stream dropped (${opts.room}); reopening in ${wait}ms`,
+        );
+        setTimeout(() => {
+          if (closing) return;
+          void open().catch((e: Error) =>
+            this.logger.error(
+              `Deepgram reopen failed (${opts.room}): ${e.message}`,
+            ),
+          );
+        }, wait);
+      });
+      current = conn;
+      attempt = 0;
+      this.logger.log(`Deepgram stream open (${opts.room})`);
+    };
+
+    await open();
+
+    /**
+     * Deepgram closes a stream that has gone quiet for about ten seconds. A
+     * capture desk between sessions, or one whose browser tab has been
+     * throttled, sends nothing for far longer than that, so the connection
+     * would be torn down mid-break and the next speaker would go uncaptioned.
+     */
+    keepAlive = setInterval(() => {
+      if (closing) return;
+      try {
+        current?.sendKeepAlive({ type: 'KeepAlive' });
+      } catch {
+        // the reopen path covers a connection too far gone for this
+      }
+    }, 5000);
+
+    return {
+      sendAudio: (chunk) => current?.sendMedia(chunk),
+      // close() is synchronous on the socket; the signature stays a promise
+      // because the interface every provider implements returns one
+      close: () => {
+        closing = true;
+        if (keepAlive) clearInterval(keepAlive);
+        current?.close();
+        return Promise.resolve();
+      },
+    };
+  }
+
+  /** One Deepgram connection, wired up. `onClose` fires on every close. */
+  private async connect(
+    opts: { room: string; keywords: string[]; diarise?: boolean },
+    onTranscript: (event: TranscriptEvent) => void,
+    onClose: () => void,
+  ) {
     const conn = await this.client.listen.v1.connect({
       model: 'nova-3',
       language: 'en',
@@ -193,17 +268,13 @@ export class DeepTranscriptionProvider implements TranscriptionProvider {
     conn.on('error', (e) =>
       this.logger.error(`Deepgram error (${opts.room}): ${e.message}`),
     );
-    conn.on('close', () =>
-      this.logger.warn(`Deepgram stream closed (${opts.room})`),
-    );
+    conn.on('close', () => {
+      this.logger.warn(`Deepgram stream closed (${opts.room})`);
+      onClose();
+    });
 
     conn.connect(); //registers handler and open the socket...
     await conn.waitForOpen(); // ..and this resolves once its actually open
-    this.logger.log(`Deepgram stream open (${opts.room})`);
-
-    return {
-      sendAudio: (chuck) => conn.sendMedia(chuck),
-      close: async () => conn.close(),
-    };
+    return conn;
   }
 }
