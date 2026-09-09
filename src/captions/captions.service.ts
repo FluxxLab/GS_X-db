@@ -77,6 +77,8 @@ export class CaptionsService implements OnModuleDestroy {
    * findLiveInRoom would return nothing.
    */
   private readonly lastSession = new Map<string, string>();
+  /** Throttles the dropped-chunk warning: audio arrives four times a second. */
+  private readonly lastSendWarn = new Map<string, number>();
   private static readonly CONTEXT_LINES = 3;
 
   constructor(
@@ -104,7 +106,17 @@ export class CaptionsService implements OnModuleDestroy {
     let stream: TranscriptionStream;
     try {
       stream = await this.transcription.openStream(
-        { room, keywords: SUMMIT_KEYWORDS, diarise },
+        {
+          room,
+          keywords: SUMMIT_KEYWORDS,
+          diarise,
+          onReopen: () => {
+            this.logger.warn(
+              `transcription reopened (${room}); asking the capture desk for a fresh recording`,
+            );
+            this.realtime.emitGlobal('capture:restart', { room });
+          },
+        },
         (event) =>
           void this.onTranscript(room, event).catch((error) =>
             /**
@@ -157,14 +169,26 @@ export class CaptionsService implements OnModuleDestroy {
       stream.sendAudio(chunk);
     } catch (error) {
       /**
-       * Deepgram hung up. Forget the room rather than throw once per 250ms
-       * chunk: the capture heartbeat then expires and live-ops shows the room
-       * unhealthy, which is the signal an operator can act on.
+       * A chunk that missed its socket, nothing more.
+       *
+       * This used to delete the room, which meant that after the very first
+       * failed send every later chunk was dropped on the floor - the stream
+       * underneath had already reopened, but the service had forgotten the
+       * room existed, so captions never came back until an operator stopped
+       * and restarted capture at the desk. That is the bug the desk kept
+       * working around by hand.
+       *
+       * The provider owns reconnection now, so the right thing to do with a
+       * failed chunk is lose it and carry on. Logged once every few seconds
+       * rather than four times a second.
        */
-      this.activeRooms.delete(room);
-      this.logger.warn(
-        `Deepgram stream unusable (${room}): ${(error as Error).message}`,
-      );
+      const now = Date.now();
+      if (now - (this.lastSendWarn.get(room) ?? 0) > 5000) {
+        this.lastSendWarn.set(room, now);
+        this.logger.warn(
+          `dropped audio chunk (${room}): ${(error as Error).message}`,
+        );
+      }
     }
   }
 
@@ -436,9 +460,13 @@ export class CaptionsService implements OnModuleDestroy {
     const { affected } = await this.segments.delete({ sessionId });
 
     for (const language of [CaptionLanguage.EN, ...TRANSLATION_TARGETS]) {
-      this.realtime.emitToRoom(Rooms.caption(sessionId, language), 'captions:cleared', {
-        sessionId,
-      });
+      this.realtime.emitToRoom(
+        Rooms.caption(sessionId, language),
+        'captions:cleared',
+        {
+          sessionId,
+        },
+      );
     }
 
     this.logger.warn(
@@ -468,13 +496,11 @@ export class CaptionsService implements OnModuleDestroy {
     if (language !== 'en')
       void this.queueTranslationGapFill(sessionId, language);
 
-    return rows
-      .reverse()
-      .map((r) => ({
-        text: maskProfanity(r.text),
-        speaker: r.speaker,
-        at: r.createdAt,
-      }));
+    return rows.reverse().map((r) => ({
+      text: maskProfanity(r.text),
+      speaker: r.speaker,
+      at: r.createdAt,
+    }));
   }
 
   /**

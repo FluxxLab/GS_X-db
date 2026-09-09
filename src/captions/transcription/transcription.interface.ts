@@ -47,7 +47,21 @@ export interface TranscriptionProvider {
      * volume, laughter - and a false "Speaker 2" mid-monologue reads worse
      * than no labels at all.
      */
-    opts: { room: string; keywords: string[]; diarise?: boolean },
+    opts: {
+      room: string;
+      keywords: string[];
+      diarise?: boolean;
+      /**
+       * Called when the provider has replaced a dropped stream with a fresh
+       * one. The audio arriving from the capture desk is mid-container by
+       * then, and a new stream cannot decode it without the header that only
+       * appears in a recorder's first chunk - so somebody has to ask the desk
+       * to start a new recording. Without this the reopened stream is fed
+       * undecodable audio and Deepgram hangs up again within seconds, over
+       * and over.
+       */
+      onReopen?: () => void;
+    },
     onTranscript: (event: TranscriptEvent) => void,
   ): Promise<TranscriptionStream>;
 }

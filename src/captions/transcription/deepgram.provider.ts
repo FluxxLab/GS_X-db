@@ -125,7 +125,12 @@ export class DeepTranscriptionProvider implements TranscriptionProvider {
   }
 
   async openStream(
-    opts: { room: string; keywords: string[]; diarise?: boolean },
+    opts: {
+      room: string;
+      keywords: string[];
+      diarise?: boolean;
+      onReopen?: () => void;
+    },
     onTranscript: (event: TranscriptEvent) => void,
   ): Promise<TranscriptionStream> {
     /**
@@ -162,9 +167,13 @@ export class DeepTranscriptionProvider implements TranscriptionProvider {
           );
         }, wait);
       });
+      const isReopen = current !== null;
       current = conn;
       attempt = 0;
       this.logger.log(`Deepgram stream open (${opts.room})`);
+      // Ask the desk for a fresh recording, or this stream is fed the middle
+      // of a WebM container and will be dropped again in seconds.
+      if (isReopen) opts.onReopen?.();
     };
 
     await open();
