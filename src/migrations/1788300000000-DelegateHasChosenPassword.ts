@@ -15,9 +15,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * self-registered - is unaffected. The seed importer sets it false per row
  * it creates.
  */
-export class DelegateHasChosenPassword1788300000000
-  implements MigrationInterface
-{
+export class DelegateHasChosenPassword1788300000000 implements MigrationInterface {
   name = 'DelegateHasChosenPassword1788300000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

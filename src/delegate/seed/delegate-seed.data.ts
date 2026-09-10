@@ -454,7 +454,6 @@ const REGIONS: Record<string, Region> = {
   },
 };
 
-
 // ---------------------------------------------------------------- organisations and titles
 const ORGANISATIONS: {
   name: string;

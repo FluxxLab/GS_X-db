@@ -95,9 +95,9 @@ describe('DelegateSeedService.tick', () => {
     const { service, saved } = build(10, 150);
     await expect(service.tick()).resolves.toBe(true);
     expect(saved).toHaveLength(1);
-    expect(
-      (saved[0] as { hasChosenPassword: boolean }).hasChosenPassword,
-    ).toBe(false);
+    expect((saved[0] as { hasChosenPassword: boolean }).hasChosenPassword).toBe(
+      false,
+    );
     expect((saved[0] as { pendingReview: boolean }).pendingReview).toBe(false);
   });
 
