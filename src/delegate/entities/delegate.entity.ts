@@ -75,4 +75,13 @@ export class Delegate {
 
   @Column({ type: 'timestamptz', nullable: true })
   consentAt: Date | null;
+
+  /**
+   * False only for an account the system created on the delegate's behalf -
+   * the seed importer's placeholder rows - whose password is a secret nobody
+   * holds. Password reset refuses to email a code for one of these; nothing
+   * else in the app reads it.
+   */
+  @Column({ type: 'boolean', default: true })
+  hasChosenPassword: boolean;
 }

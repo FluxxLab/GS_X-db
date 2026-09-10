@@ -14,7 +14,7 @@ import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
 import dataSource from '../src/config/data-source';
 import { Delegate } from '../src/delegate/entities/delegate.entity';
-import { generate, SEED_TAG } from '../src/delegate/seed/delegate-seed.data';
+import { generate } from '../src/delegate/seed/delegate-seed.data';
 
 // ---------------------------------------------------------------- cli
 async function main() {
@@ -51,7 +51,7 @@ async function main() {
     const { affected } = await repo
       .createQueryBuilder()
       .delete()
-      .where(':tag = ANY(tags)', { tag: SEED_TAG })
+      .where('"hasChosenPassword" = false')
       .execute();
     console.log(`purged ${affected ?? 0} seeded delegate(s)`);
     await dataSource.destroy();
@@ -60,7 +60,7 @@ async function main() {
 
   const existing = await repo
     .createQueryBuilder('d')
-    .where(':tag = ANY(d.tags)', { tag: SEED_TAG })
+    .where('d."hasChosenPassword" = false')
     .getCount();
   const rows = generate(count);
   // one unguessable secret for the batch - these accounts are scenery, not logins
@@ -69,6 +69,7 @@ async function main() {
     repo.create({
       ...r,
       passwordHash,
+      hasChosenPassword: false,
       pendingReview: false,
       consentAt: new Date(),
       phone: null,

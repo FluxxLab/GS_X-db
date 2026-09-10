@@ -20,7 +20,6 @@ import { EventSeverity } from 'src/security/entities/security-event.entity';
 import { SecurityService } from 'src/security/security.service';
 import { RegisterDto } from './dto/register.dto';
 import { OtpService } from './otp.service';
-import { SEED_TAG } from '../delegate/seed/delegate-seed.data';
 
 interface RequestContext {
   userAgent?: string;
@@ -198,9 +197,10 @@ export class AuthService {
     const email = rawEmail.toLowerCase().trim();
     const delegate = await this.delegate.findByEmailForAuth(email);
     if (!delegate) return;
-    // Seeded delegates sit on public mail domains that may belong to real
-    // people; a reset code must never land in a stranger's inbox.
-    if (delegate.tags?.includes(SEED_TAG)) return;
+    // A placeholder account's password is a secret nobody holds, and its
+    // email is a guess at a public mailbox that may belong to a real
+    // stranger - a reset code must never land in it.
+    if (!delegate.hasChosenPassword) return;
     await this.otpService.requestOtp(
       email,
       'email',

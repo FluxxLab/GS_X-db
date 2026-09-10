@@ -11,16 +11,17 @@
  *
  * What a delegate sees of another delegate is name, organisation, title,
  * country and an avatar - so those are the fields that have to read as real.
- * What only the system sees keeps every row traceable: each one carries the
- * tag `seed`, which no audience segment matches, so it never gets a push and
- * can be purged in one query; the email sits on a public domain in a shape a
- * real registrant would use, but the password hash is of a secret nobody
- * holds, so the account itself cannot be signed into.
+ * Every delegate here is Nigerian, on a Nigerian public mail domain - the
+ * mix a real gender summit in Abuja actually draws.
+ *
+ * Nothing marks a row as a placeholder to anyone reading the directory or an
+ * export - what keeps it honest lives on the account instead:
+ * `hasChosenPassword` is false, so it cannot receive a reset email, and the
+ * password hash is of a secret nobody holds, so it cannot be signed into
+ * even if it could.
  */
 import { randomInt } from 'crypto';
 import { AccessTier } from '../entities/delegate.entity';
-
-export const SEED_TAG = 'seed';
 
 type Region = {
   first: { f: string[]; m: string[] };
@@ -453,111 +454,6 @@ const REGIONS: Record<string, Region> = {
   },
 };
 
-/** Delegations from outside Nigeria, drawn from their own countries' names. */
-const ABROAD: Record<string, Region> = {
-  Ghana: {
-    weight: 1,
-    first: {
-      f: ['Ama', 'Abena', 'Akosua', 'Adwoa', 'Efua', 'Esi', 'Yaa', 'Afia'],
-      m: ['Kwame', 'Kofi', 'Kwabena', 'Yaw', 'Kwesi', 'Kojo', 'Nana', 'Fiifi'],
-    },
-    last: [
-      'Mensah',
-      'Owusu',
-      'Boateng',
-      'Asante',
-      'Appiah',
-      'Osei',
-      'Agyemang',
-      'Darko',
-      'Acheampong',
-      'Ofori',
-    ],
-  },
-  Kenya: {
-    weight: 1,
-    first: {
-      f: [
-        'Wanjiru',
-        'Achieng',
-        'Njeri',
-        'Akinyi',
-        'Wambui',
-        'Nyambura',
-        'Atieno',
-        'Chebet',
-      ],
-      m: [
-        'Kamau',
-        'Otieno',
-        'Mwangi',
-        'Kipchoge',
-        'Ochieng',
-        'Njoroge',
-        'Kiprop',
-        'Odhiambo',
-      ],
-    },
-    last: [
-      'Mwangi',
-      'Odhiambo',
-      'Njoroge',
-      'Kariuki',
-      'Ouko',
-      'Wanjala',
-      'Kimani',
-      'Omondi',
-      'Cheruiyot',
-      'Mutua',
-    ],
-  },
-  'The Gambia': {
-    weight: 1,
-    first: {
-      f: ['Fatou', 'Isatou', 'Mariama', 'Awa', 'Binta', 'Haddy', 'Jainaba'],
-      m: ['Lamin', 'Modou', 'Ousman', 'Ebrima', 'Bakary', 'Sainey', 'Alieu'],
-    },
-    last: [
-      'Jallow',
-      'Ceesay',
-      'Jobe',
-      'Sanneh',
-      'Touray',
-      'Camara',
-      'Sowe',
-      'Bah',
-      'Njie',
-      'Faal',
-    ],
-  },
-  Benin: {
-    weight: 1,
-    first: {
-      f: [
-        'Ayaba',
-        'Nadège',
-        'Reine',
-        'Sènan',
-        'Colette',
-        'Mireille',
-        'Ornella',
-      ],
-      m: ['Josué', 'Romaric', 'Sèdjro', 'Boris', 'Hervé', 'Ulrich', 'Gildas'],
-    },
-    last: [
-      'Houngbédji',
-      'Ahouansou',
-      'Dossou',
-      'Zinsou',
-      'Agbodjan',
-      'Kpodar',
-      'Adjovi',
-      'Gbaguidi',
-      'Hounkpatin',
-      'Soglo',
-    ],
-  },
-};
 
 // ---------------------------------------------------------------- organisations and titles
 const ORGANISATIONS: {
@@ -890,26 +786,6 @@ const ORGANISATIONS: {
     name: 'High Commission of Canada in Nigeria',
     titles: ['Development Officer', 'Programme Manager'],
   },
-  {
-    name: 'Global Bridges Gambia',
-    titles: ['Programme Officer', 'Director'],
-    country: 'The Gambia',
-  },
-  {
-    name: 'Ministry of Gender, Children and Social Protection, Ghana',
-    titles: ['Deputy Director', 'Programme Officer'],
-    country: 'Ghana',
-  },
-  {
-    name: 'Kenya Ministry of Gender, Culture, the Arts and Heritage',
-    titles: ['Senior Programme Officer', 'Policy Analyst'],
-    country: 'Kenya',
-  },
-  {
-    name: 'Ministry of Women Affairs, Republic of Benin',
-    titles: ['Programme Officer', 'Deputy Director'],
-    country: 'Benin',
-  },
 ];
 
 // the same five thematic tracks the app offers at onboarding
@@ -982,7 +858,8 @@ const slug = (s: string) =>
  * short of an invite-code registration list keyed to their real email, which
  * this data does not have. Before the directory goes in front of delegates,
  * either reconcile these rows against real self-registrations by hand or
- * purge them with the `seed` tag.
+ * delete them - they are exactly the rows with `hasChosenPassword` false and
+ * a name on this list.
  */
 const REAL_ROSTER: { name: string; organisation?: string }[] = [
   { name: 'Maryam Abdallah', organisation: 'Udama Initiative for Women' },
@@ -1144,7 +1021,6 @@ export interface SeedDelegate {
   accessTier: AccessTier;
   tracks: string[];
   interests: string[];
-  tags: string[];
 }
 
 /** REAL_ROSTER in a random order, without replacement, for `generate` to
@@ -1163,8 +1039,7 @@ export function generate(count: number): SeedDelegate[] {
     const org = real
       ? { name: real.organisation ?? '', titles: [''] }
       : pick(ORGANISATIONS);
-    // a delegation from abroad carries its own country's names
-    const region = (org.country && ABROAD[org.country]) || weightedRegion();
+    const region = weightedRegion();
     const female = randomInt(100) < 62; // a gender summit skews that way
     const [realFirst, ...realRest] = real ? real.name.split(' ') : [];
     const first = real
@@ -1200,7 +1075,7 @@ export function generate(count: number): SeedDelegate[] {
     let local = pick(shapes)();
     if (used.has(local)) local = `${local}${randomInt(10, 99)}`;
     if (used.has(local)) continue;
-    const domain = randomInt(10) < 7 ? 'gmail.com' : 'ymail.com';
+    const domain = randomInt(10) < 7 ? 'gmail.com' : 'yahoo.com';
     used.add(local);
 
     // VIP is rare and never at a media house; press follows the organisation.
@@ -1221,7 +1096,6 @@ export function generate(count: number): SeedDelegate[] {
       accessTier: tier,
       tracks: sample(TRACKS, randomInt(1, 4)),
       interests: sample(INTERESTS, randomInt(2, 6)),
-      tags: [SEED_TAG],
     });
   }
   return out;

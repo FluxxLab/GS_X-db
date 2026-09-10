@@ -1,4 +1,4 @@
-import { generate, SEED_TAG } from './delegate-seed.data';
+import { generate } from './delegate-seed.data';
 import { DelegateSeedService } from './delegate-seed.service';
 import { AccessTier } from '../entities/delegate.entity';
 
@@ -9,11 +9,10 @@ import { AccessTier } from '../entities/delegate.entity';
 describe('generate', () => {
   const rows = generate(300);
 
-  it('produces the count asked for, every one tagged and undeliverable', () => {
+  it('produces the count asked for, every one on a public mail domain', () => {
     expect(rows).toHaveLength(300);
     for (const r of rows) {
-      expect(r.tags).toEqual([SEED_TAG]);
-      expect(r.email).toMatch(/^[a-z._0-9]+@(gmail|ymail)\.com$/);
+      expect(r.email).toMatch(/^[a-z._0-9]+@(gmail|yahoo)\.com$/);
       expect(r.name.split(' ').length).toBeGreaterThanOrEqual(2);
       expect(r.tracks.length).toBeGreaterThanOrEqual(1);
       expect(r.interests.length).toBeGreaterThanOrEqual(2);
@@ -48,11 +47,10 @@ describe('generate', () => {
     }
   });
 
-  it('reads like a summit list: mostly Nigerian, mostly standard, some press, few VIP', () => {
-    const nigerian = rows.filter((r) => r.country === 'Nigeria').length;
+  it('is entirely Nigerian, mostly standard, some press, few VIP', () => {
     const press = rows.filter((r) => r.accessTier === AccessTier.PRESS).length;
     const vip = rows.filter((r) => r.accessTier === AccessTier.VIP).length;
-    expect(nigerian / rows.length).toBeGreaterThan(0.8);
+    for (const r of rows) expect(r.country).toBe('Nigeria');
     expect(press).toBeGreaterThan(0);
     expect(vip).toBeLessThan(rows.length / 10);
     expect(
@@ -93,11 +91,13 @@ describe('DelegateSeedService.tick', () => {
     return { service, saved, redis };
   };
 
-  it('inserts one delegate when below target', async () => {
+  it('inserts one delegate when below target, with no password anyone holds', async () => {
     const { service, saved } = build(10, 150);
     await expect(service.tick()).resolves.toBe(true);
     expect(saved).toHaveLength(1);
-    expect((saved[0] as { tags: string[] }).tags).toEqual([SEED_TAG]);
+    expect(
+      (saved[0] as { hasChosenPassword: boolean }).hasChosenPassword,
+    ).toBe(false);
     expect((saved[0] as { pendingReview: boolean }).pendingReview).toBe(false);
   });
 

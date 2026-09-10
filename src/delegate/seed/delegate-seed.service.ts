@@ -13,7 +13,7 @@ import Redis from 'ioredis';
 import { Repository } from 'typeorm';
 import { REDIS } from '../../common/redis/redis.module';
 import { Delegate } from '../entities/delegate.entity';
-import { generate, SEED_TAG } from './delegate-seed.data';
+import { generate } from './delegate-seed.data';
 
 /**
  * A slow trickle of seeded delegates, one every N minutes, until a target
@@ -25,8 +25,10 @@ import { generate, SEED_TAG } from './delegate-seed.data';
  * where it left off and never overshoots. A short Redis lock per tick keeps
  * two API instances from inserting the same minute's delegate twice.
  *
- * Seeded rows are marked with the `seed` tag; `pnpm seed:delegates -- --purge`
- * removes them all.
+ * A seeded row is one with `hasChosenPassword` false - that is what counts
+ * it toward the target here, what `pnpm seed:delegates -- --purge` deletes,
+ * and what stops it ever receiving a password-reset email (see
+ * AuthService.forgotPassword).
  */
 @Injectable()
 export class DelegateSeedService implements OnModuleInit, OnModuleDestroy {
@@ -70,7 +72,7 @@ export class DelegateSeedService implements OnModuleInit, OnModuleDestroy {
     try {
       const seeded = await this.delegates
         .createQueryBuilder('d')
-        .where(':tag = ANY(d.tags)', { tag: SEED_TAG })
+        .where('d."hasChosenPassword" = false')
         .getCount();
       if (seeded >= this.target) {
         this.logger.log(`seed target ${this.target} reached; stopping`);
@@ -94,6 +96,7 @@ export class DelegateSeedService implements OnModuleInit, OnModuleDestroy {
         this.delegates.create({
           ...row,
           passwordHash: await bcrypt.hash(randomBytes(32).toString('hex'), 10),
+          hasChosenPassword: false,
           pendingReview: false,
           consentAt: new Date(),
           phone: null,
