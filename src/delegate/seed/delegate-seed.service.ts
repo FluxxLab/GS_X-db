@@ -1,0 +1,110 @@
+import {
+  Inject,
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
+import * as bcrypt from 'bcrypt';
+import { randomBytes } from 'crypto';
+import Redis from 'ioredis';
+import { Repository } from 'typeorm';
+import { REDIS } from '../../common/redis/redis.module';
+import { Delegate } from '../entities/delegate.entity';
+import { generate, SEED_TAG } from './delegate-seed.data';
+
+/**
+ * A slow trickle of seeded delegates, one every N minutes, until a target
+ * is reached - so the registration count climbs the way a real one does
+ * instead of jumping by 150 at once.
+ *
+ * Off unless SEED_DELEGATES_TARGET is set. Counts what is already there on
+ * every tick rather than remembering, so a restart or a redeploy picks up
+ * where it left off and never overshoots. A short Redis lock per tick keeps
+ * two API instances from inserting the same minute's delegate twice.
+ *
+ * Seeded rows are marked with the `seed` tag; `pnpm seed:delegates -- --purge`
+ * removes them all.
+ */
+@Injectable()
+export class DelegateSeedService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(DelegateSeedService.name);
+  private timer: NodeJS.Timeout | null = null;
+
+  constructor(
+    @InjectRepository(Delegate)
+    private readonly delegates: Repository<Delegate>,
+    @Inject(REDIS)
+    private readonly redis: Redis,
+    private readonly config: ConfigService,
+  ) {}
+
+  get target(): number {
+    return Number(this.config.get('SEED_DELEGATES_TARGET') ?? 0) || 0;
+  }
+
+  get intervalMs(): number {
+    const minutes = Number(
+      this.config.get('SEED_DELEGATES_INTERVAL_MIN') ?? 20,
+    );
+    return Math.max(1, minutes || 20) * 60_000;
+  }
+
+  onModuleInit(): void {
+    if (this.target <= 0) return;
+    this.logger.log(
+      `seeding delegates: one every ${this.intervalMs / 60_000} min until ${this.target}`,
+    );
+    this.timer = setInterval(() => void this.tick(), this.intervalMs);
+    this.timer.unref();
+  }
+
+  onModuleDestroy(): void {
+    if (this.timer) clearInterval(this.timer);
+  }
+
+  /** One delegate, if we are below target and no other instance got here first. */
+  async tick(): Promise<boolean> {
+    try {
+      const seeded = await this.delegates
+        .createQueryBuilder('d')
+        .where(':tag = ANY(d.tags)', { tag: SEED_TAG })
+        .getCount();
+      if (seeded >= this.target) {
+        this.logger.log(`seed target ${this.target} reached; stopping`);
+        this.onModuleDestroy();
+        return false;
+      }
+
+      // the lock lives for most of the interval, so a second instance ticking
+      // in the same window skips rather than doubles
+      const lock = await this.redis.set(
+        'seed:delegates:tick',
+        '1',
+        'PX',
+        Math.floor(this.intervalMs * 0.8),
+        'NX',
+      );
+      if (lock !== 'OK') return false;
+
+      const [row] = generate(1);
+      await this.delegates.save(
+        this.delegates.create({
+          ...row,
+          passwordHash: await bcrypt.hash(randomBytes(32).toString('hex'), 10),
+          pendingReview: false,
+          consentAt: new Date(),
+          phone: null,
+          avatarUrl: null,
+        }),
+      );
+      this.logger.log(`seeded ${row.name} (${seeded + 1}/${this.target})`);
+      return true;
+    } catch (e) {
+      this.logger.warn(`seed tick failed: ${e}`);
+      return false;
+    }
+  }
+}

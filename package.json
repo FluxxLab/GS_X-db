@@ -34,7 +34,8 @@
     "migration:generate": "pnpm typeorm migration:generate",
     "migration:run": "pnpm typeorm migration:run",
     "migration:revert": "pnpm typeorm migration:revert",
-    "migration:run:prod": "typeorm migration:run -d dist/config/data-source.js"
+    "migration:run:prod": "typeorm migration:run -d dist/config/data-source.js",
+    "seed:delegates": "ts-node -r tsconfig-paths/register scripts/seed-delegates.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",
