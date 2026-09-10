@@ -28,7 +28,9 @@ import { generate } from './delegate-seed.data';
  * A seeded row is one with `hasChosenPassword` false - that is what counts
  * it toward the target here, what `pnpm seed:delegates -- --purge` deletes,
  * and what stops it ever receiving a password-reset email (see
- * AuthService.forgotPassword).
+ * AuthService.forgotPassword). A row seeded before that column existed still
+ * only carries the legacy `seed` tag, so both are checked everywhere a row's
+ * seeded-ness matters - see the comment on the query below.
  */
 @Injectable()
 export class DelegateSeedService implements OnModuleInit, OnModuleDestroy {
@@ -70,9 +72,13 @@ export class DelegateSeedService implements OnModuleInit, OnModuleDestroy {
   /** One delegate, if we are below target and no other instance got here first. */
   async tick(): Promise<boolean> {
     try {
+      // A row written before `hasChosenPassword` existed still only carries
+      // the old `seed` tag, and nothing back-fills the new column onto it -
+      // both are checked so a marker change never lets the trickle recount
+      // an already-seeded batch as unseeded and overshoot the target.
       const seeded = await this.delegates
         .createQueryBuilder('d')
-        .where('d."hasChosenPassword" = false')
+        .where(`d."hasChosenPassword" = false OR 'seed' = ANY(d.tags)`)
         .getCount();
       if (seeded >= this.target) {
         this.logger.log(`seed target ${this.target} reached; stopping`);

@@ -24,14 +24,16 @@ describe('generate', () => {
     expect(new Set(rows.map((r) => r.email)).size).toBe(rows.length);
   });
 
-  it('invents a title and organisation for a made-up delegate, and neither for a real one', () => {
+  it('invents a title for a made-up delegate and none for a real one, but never an organisation', () => {
     // an empty title is how a roster-sourced row is told apart from a fully
-    // invented one - synthetic organisations never carry an empty title
+    // invented one
     const invented = rows.filter((r) => r.title !== '');
     const fromRoster = rows.filter((r) => r.title === '');
     expect(invented.length).toBeGreaterThan(0);
     expect(fromRoster.length).toBeGreaterThan(0);
-    for (const r of invented) expect(r.organisation).toBeTruthy();
+    // organisation is a specific, checkable claim - never shown, real name
+    // or invented one alike
+    for (const r of rows) expect(r.organisation).toBe('');
     // a real registrant's tier is never guessed - VIP gates real access
     for (const r of fromRoster) expect(r.accessTier).toBe(AccessTier.STANDARD);
   });

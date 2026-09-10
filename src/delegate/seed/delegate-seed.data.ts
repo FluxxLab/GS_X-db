@@ -6,13 +6,16 @@
  * invented (see the note on REAL_ROSTER for what that trade-off costs).
  * Once it runs out, the rest are fully synthetic: names assembled per region
  * so first name and surname agree - a Yoruba first name with a Kanuri
- * surname is the kind of thing a Nigerian reader notices at once - with an
- * organisation, title, tier, tracks and interests invented to match.
+ * surname is the kind of thing a Nigerian reader notices at once - with a
+ * title, tier, tracks and interests invented to match. An organisation is
+ * still picked internally, to weight the title and tier realistically, but
+ * never shown: it is a specific, checkable claim, and organisation is left
+ * blank on every row for that reason - real registrant or invented alike.
  *
- * What a delegate sees of another delegate is name, organisation, title,
- * country and an avatar - so those are the fields that have to read as real.
- * Every delegate here is Nigerian, on a Nigerian public mail domain - the
- * mix a real gender summit in Abuja actually draws.
+ * What a delegate sees of another delegate is name, title, country and an
+ * avatar - so those are the fields that have to read as real. Every delegate
+ * here is Nigerian, on a Nigerian public mail domain - the mix a real gender
+ * summit in Abuja actually draws.
  *
  * Nothing marks a row as a placeholder to anyone reading the directory or an
  * export - what keeps it honest lives on the account instead:
@@ -844,6 +847,9 @@ const slug = (s: string) =>
  * Actual GIS-26 registrants, name and organisation only - the id column the
  * registration export carried is dropped, since it means nothing here and
  * would only invite treating these rows as more official than they are.
+ * The organisation is kept here even though `generate` never displays it -
+ * it still feeds tier weighting - but it is real data from the export, not
+ * invented, unlike everything else `generate` fills in below.
  *
  * These are real people, so nothing about them is invented beyond what
  * `generate` has to invent for every row (an email, a tier, tracks and
@@ -1090,7 +1096,11 @@ export function generate(count: number): SeedDelegate[] {
       name: `${honorific}${first} ${last}`,
       email: `${local}@${domain}`,
       title: pick(org.titles),
-      organisation: org.name,
+      // left blank for every row - an organisation is a specific, checkable
+      // claim, and that is true whether the name above it is invented or a
+      // real registrant's. `org` is still picked above for its title and
+      // tier, just never shown.
+      organisation: '',
       country: org.country ?? 'Nigeria',
       accessTier: tier,
       tracks: sample(TRACKS, randomInt(1, 4)),

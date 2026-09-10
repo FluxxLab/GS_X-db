@@ -47,11 +47,20 @@ async function main() {
   await dataSource.initialize();
   const repo = dataSource.getRepository(Delegate);
 
+  // A row is seeded if it was ever marked as such - `hasChosenPassword`
+  // false is the current marker, but a row written before that column
+  // existed still carries the old `seed` tag and never will have either
+  // marker updated retroactively, so both are checked everywhere this
+  // matters. Without this a redeploy that changes the marker would orphan
+  // every row seeded under the previous one: invisible to --purge, and
+  // silently recounted as "not yet seeded" by the trickle service.
+  const isSeeded = `"hasChosenPassword" = false OR 'seed' = ANY(tags)`;
+
   if (flag('purge')) {
     const { affected } = await repo
       .createQueryBuilder()
       .delete()
-      .where('"hasChosenPassword" = false')
+      .where(isSeeded)
       .execute();
     console.log(`purged ${affected ?? 0} seeded delegate(s)`);
     await dataSource.destroy();
@@ -60,7 +69,7 @@ async function main() {
 
   const existing = await repo
     .createQueryBuilder('d')
-    .where('d."hasChosenPassword" = false')
+    .where(isSeeded)
     .getCount();
   const rows = generate(count);
   // one unguessable secret for the batch - these accounts are scenery, not logins
