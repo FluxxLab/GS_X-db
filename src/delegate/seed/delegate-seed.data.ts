@@ -23,12 +23,18 @@ type Region = {
   first: { f: string[]; m: string[] };
   last: string[];
   weight: number;
+  /** Honorifics a reader would accept in front of these names. */
+  honorifics?: { f: string[]; m: string[] };
 };
 
 // ---------------------------------------------------------------- names
 const REGIONS: Record<string, Region> = {
   yoruba: {
     weight: 30,
+    honorifics: {
+      f: ['Dr.', 'Mrs.', 'Ms.', 'Alhaja', 'Barr.', 'Prof.'],
+      m: ['Dr.', 'Mr.', 'Alhaji', 'Engr.', 'Barr.', 'Prof.'],
+    },
     first: {
       f: [
         'Adebisi',
@@ -193,6 +199,10 @@ const REGIONS: Record<string, Region> = {
   },
   hausa: {
     weight: 25,
+    honorifics: {
+      f: ['Dr.', 'Hajiya', 'Malama', 'Barr.', 'Prof.'],
+      m: ['Dr.', 'Alhaji', 'Mallam', 'Engr.', 'Barr.', 'Prof.'],
+    },
     first: {
       f: [
         'Aisha',
@@ -419,6 +429,10 @@ const REGIONS: Record<string, Region> = {
   },
   kanuri: {
     weight: 2,
+    honorifics: {
+      f: ['Dr.', 'Hajiya', 'Barr.'],
+      m: ['Dr.', 'Alhaji', 'Engr.', 'Barr.'],
+    },
     first: {
       f: ['Falmata', 'Yagana', 'Fanna', 'Amina', 'Hadiza', 'Zara'],
       m: ['Kyari', 'Bukar', 'Modu', 'Grema', 'Kolo', 'Baba'],
@@ -432,6 +446,112 @@ const REGIONS: Record<string, Region> = {
       'Goni',
       'Mustapha',
       'Mele',
+    ],
+  },
+};
+
+/** Delegations from outside Nigeria, drawn from their own countries' names. */
+const ABROAD: Record<string, Region> = {
+  Ghana: {
+    weight: 1,
+    first: {
+      f: ['Ama', 'Abena', 'Akosua', 'Adwoa', 'Efua', 'Esi', 'Yaa', 'Afia'],
+      m: ['Kwame', 'Kofi', 'Kwabena', 'Yaw', 'Kwesi', 'Kojo', 'Nana', 'Fiifi'],
+    },
+    last: [
+      'Mensah',
+      'Owusu',
+      'Boateng',
+      'Asante',
+      'Appiah',
+      'Osei',
+      'Agyemang',
+      'Darko',
+      'Acheampong',
+      'Ofori',
+    ],
+  },
+  Kenya: {
+    weight: 1,
+    first: {
+      f: [
+        'Wanjiru',
+        'Achieng',
+        'Njeri',
+        'Akinyi',
+        'Wambui',
+        'Nyambura',
+        'Atieno',
+        'Chebet',
+      ],
+      m: [
+        'Kamau',
+        'Otieno',
+        'Mwangi',
+        'Kipchoge',
+        'Ochieng',
+        'Njoroge',
+        'Kiprop',
+        'Odhiambo',
+      ],
+    },
+    last: [
+      'Mwangi',
+      'Odhiambo',
+      'Njoroge',
+      'Kariuki',
+      'Ouko',
+      'Wanjala',
+      'Kimani',
+      'Omondi',
+      'Cheruiyot',
+      'Mutua',
+    ],
+  },
+  'The Gambia': {
+    weight: 1,
+    first: {
+      f: ['Fatou', 'Isatou', 'Mariama', 'Awa', 'Binta', 'Haddy', 'Jainaba'],
+      m: ['Lamin', 'Modou', 'Ousman', 'Ebrima', 'Bakary', 'Sainey', 'Alieu'],
+    },
+    last: [
+      'Jallow',
+      'Ceesay',
+      'Jobe',
+      'Sanneh',
+      'Touray',
+      'Camara',
+      'Sowe',
+      'Bah',
+      'Njie',
+      'Faal',
+    ],
+  },
+  Benin: {
+    weight: 1,
+    first: {
+      f: [
+        'Ayaba',
+        'Nadège',
+        'Reine',
+        'Sènan',
+        'Colette',
+        'Mireille',
+        'Ornella',
+      ],
+      m: ['Josué', 'Romaric', 'Sèdjro', 'Boris', 'Hervé', 'Ulrich', 'Gildas'],
+    },
+    last: [
+      'Houngbédji',
+      'Ahouansou',
+      'Dossou',
+      'Zinsou',
+      'Agbodjan',
+      'Kpodar',
+      'Adjovi',
+      'Gbaguidi',
+      'Hounkpatin',
+      'Soglo',
     ],
   },
 };
@@ -762,12 +882,10 @@ const ORGANISATIONS: {
   {
     name: 'FCDO Nigeria',
     titles: ['Development Advisor', 'Programme Manager', 'Policy Officer'],
-    country: 'United Kingdom',
   },
   {
     name: 'High Commission of Canada in Nigeria',
     titles: ['Development Officer', 'Programme Manager'],
-    country: 'Canada',
   },
   {
     name: 'Global Bridges Gambia',
@@ -817,8 +935,8 @@ const INTERESTS = [
   'Media Briefings',
   'Storytelling Showcases',
 ];
-const HONORIFICS_F = ['Dr.', 'Mrs.', 'Ms.', 'Hajiya', 'Barr.', 'Prof.'];
-const HONORIFICS_M = ['Dr.', 'Mr.', 'Alhaji', 'Engr.', 'Barr.', 'Prof.'];
+const HONORIFICS_F = ['Dr.', 'Mrs.', 'Ms.', 'Barr.', 'Prof.'];
+const HONORIFICS_M = ['Dr.', 'Mr.', 'Engr.', 'Barr.', 'Prof.'];
 
 // ---------------------------------------------------------------- generation
 const pick = <T>(xs: readonly T[]): T => xs[randomInt(xs.length)];
@@ -860,16 +978,22 @@ export function generate(count: number): SeedDelegate[] {
   const used = new Set<string>();
   const out: SeedDelegate[] = [];
   while (out.length < count) {
-    const region = weightedRegion();
+    const org = pick(ORGANISATIONS);
+    // a delegation from abroad carries its own country's names
+    const region = (org.country && ABROAD[org.country]) || weightedRegion();
     const female = randomInt(100) < 62; // a gender summit skews that way
     const first = pick(female ? region.first.f : region.first.m);
     const last = pick(region.last);
-    // one delegate in twelve carries a title the way the printed list does
+    // one delegate in twelve carries a title the way the printed list does,
+    // and only one their own region would use
+    const honorifics = region.honorifics ?? {
+      f: HONORIFICS_F,
+      m: HONORIFICS_M,
+    };
     const honorific =
       randomInt(12) === 0
-        ? pick(female ? HONORIFICS_F : HONORIFICS_M) + ' '
+        ? pick(female ? honorifics.f : honorifics.m) + ' '
         : '';
-    const org = pick(ORGANISATIONS);
 
     let local = `${slug(first)}.${slug(last)}`;
     if (used.has(local)) local = `${local}${randomInt(10, 99)}`;
