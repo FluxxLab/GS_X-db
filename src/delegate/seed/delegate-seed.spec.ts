@@ -25,15 +25,15 @@ describe('generate', () => {
   });
 
   it('invents a title for a made-up delegate and none for a real one, but never an organisation', () => {
-    // an empty title is how a roster-sourced row is told apart from a fully
-    // invented one
-    const invented = rows.filter((r) => r.title !== '');
-    const fromRoster = rows.filter((r) => r.title === '');
+    // a null title is how a roster-sourced row is told apart from a fully
+    // invented one - null, not '', because an unset field should be unset
+    const invented = rows.filter((r) => r.title !== null);
+    const fromRoster = rows.filter((r) => r.title === null);
     expect(invented.length).toBeGreaterThan(0);
     expect(fromRoster.length).toBeGreaterThan(0);
     // organisation is a specific, checkable claim - never shown, real name
     // or invented one alike
-    for (const r of rows) expect(r.organisation).toBe('');
+    for (const r of rows) expect(r.organisation).toBeNull();
     // a real registrant's tier is never guessed - VIP gates real access
     for (const r of fromRoster) expect(r.accessTier).toBe(AccessTier.STANDARD);
   });
@@ -61,15 +61,38 @@ describe('generate', () => {
       ),
     ).toBe(true);
   });
+
+  it('never redraws a roster name the caller says is already used', () => {
+    // simulate two separate process runs: the first takes almost the whole
+    // roster, the second must never repeat any of those exact names, even
+    // though it has no other memory of the first run at all
+    const first = generate(65);
+    const usedNames = new Set(first.map((r) => r.name));
+    const second = generate(6, usedNames);
+    for (const r of second) expect(usedNames.has(r.name)).toBe(false);
+  });
+
+  it('falls back to inventing once every roster name is excluded', () => {
+    // pretend the entire roster (70 real registrants) is already spoken for
+    const wholeRoster = generate(70).map((r) => r.name);
+    const rows2 = generate(3, new Set(wholeRoster));
+    for (const r of rows2) expect(r.title).not.toBeNull(); // invented, not real
+  });
 });
 
 describe('DelegateSeedService.tick', () => {
-  const build = (seededSoFar: number, target: number, lock = 'OK') => {
+  /** `alreadySeeded` is the delegates the query for existing seeded rows
+   *  returns - real name strings, standing in for rows a previous run (or
+   *  this process's own earlier ticks) already inserted. */
+  const build = (alreadySeeded: string[], target: number, lock = 'OK') => {
     const saved: unknown[] = [];
     const delegates = {
       createQueryBuilder: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
-        getCount: jest.fn().mockResolvedValue(seededSoFar),
+        getMany: jest
+          .fn()
+          .mockResolvedValue(alreadySeeded.map((name) => ({ name }))),
       }),
       create: jest.fn().mockImplementation((v: unknown) => v),
       save: jest.fn().mockImplementation(async (v: unknown) => {
@@ -94,7 +117,7 @@ describe('DelegateSeedService.tick', () => {
   };
 
   it('inserts one delegate when below target, with no password anyone holds', async () => {
-    const { service, saved } = build(10, 150);
+    const { service, saved } = build(Array(10).fill('x'), 150);
     await expect(service.tick()).resolves.toBe(true);
     expect(saved).toHaveLength(1);
     expect((saved[0] as { hasChosenPassword: boolean }).hasChosenPassword).toBe(
@@ -103,14 +126,27 @@ describe('DelegateSeedService.tick', () => {
     expect((saved[0] as { pendingReview: boolean }).pendingReview).toBe(false);
   });
 
+  it('never repeats a name a previous run already seeded', async () => {
+    // a prior run (or an earlier tick) already took the whole real roster
+    // except one name; this tick must land on exactly that one
+    const roster = generate(70).map((r) => r.name);
+    const { service, saved } = build(roster.slice(0, 69), 150);
+    await service.tick();
+    expect((saved[0] as { name: string }).name).toBe(roster[69]);
+  });
+
   it('inserts nothing once the target is reached', async () => {
-    const { service, saved } = build(150, 150);
+    const { service, saved } = build(Array(150).fill('x'), 150);
     await expect(service.tick()).resolves.toBe(false);
     expect(saved).toHaveLength(0);
   });
 
   it('skips the tick when another instance holds the lock', async () => {
-    const { service, saved, redis } = build(10, 150, null as unknown as string);
+    const { service, saved, redis } = build(
+      Array(10).fill('x'),
+      150,
+      null as unknown as string,
+    );
     await expect(service.tick()).resolves.toBe(false);
     expect(saved).toHaveLength(0);
     expect(redis.set).toHaveBeenCalledWith(
@@ -123,14 +159,14 @@ describe('DelegateSeedService.tick', () => {
   });
 
   it('is off when no target is configured', () => {
-    const { service } = build(0, 0);
+    const { service } = build([], 0);
     expect(service.target).toBe(0);
     service.onModuleInit();
     expect((service as unknown as { timer: unknown }).timer).toBeNull();
   });
 
   it('defaults to twenty minutes', () => {
-    const { service } = build(0, 150);
+    const { service } = build([], 150);
     expect(service.intervalMs).toBe(20 * 60_000);
   });
 });

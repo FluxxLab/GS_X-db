@@ -1020,27 +1020,36 @@ const REAL_ROSTER: { name: string; organisation?: string }[] = [
 export interface SeedDelegate {
   name: string;
   email: string;
-  title: string;
-  organisation: string;
+  /** null, not '', for a real registrant - an unset field stays unset. */
+  title: string | null;
+  /** Always null - see the comment where this is set below. */
+  organisation: string | null;
   country: string;
   accessTier: AccessTier;
   tracks: string[];
   interests: string[];
 }
 
-/** REAL_ROSTER in a random order, without replacement, for `generate` to
- *  draw from before it falls back to inventing anyone. */
-let rosterDraw: { name: string; organisation?: string }[] | null = null;
-function nextFromRoster(): { name: string; organisation?: string } | null {
-  if (rosterDraw === null) rosterDraw = sample(REAL_ROSTER, REAL_ROSTER.length);
-  return rosterDraw.pop() ?? null;
-}
-
-export function generate(count: number): SeedDelegate[] {
+/**
+ * `generate` is a pure function with no memory between calls, and the
+ * trickle service and the CLI script are separate process runs (and a
+ * restart of either is a fresh one too) - so "exhaust the roster before
+ * inventing anyone" only means anything if the caller says which roster
+ * names have already been used. Without `excludeRosterNames`, two runs that
+ * never see each other's output can each independently draw the same real
+ * person. Both callers query the database for names already seeded and pass
+ * that set in - see DelegateSeedService.tick and the CLI script.
+ */
+export function generate(
+  count: number,
+  excludeRosterNames: ReadonlySet<string> = new Set(),
+): SeedDelegate[] {
+  const available = REAL_ROSTER.filter((r) => !excludeRosterNames.has(r.name));
+  const rosterDraw = sample(available, available.length);
   const used = new Set<string>();
   const out: SeedDelegate[] = [];
   while (out.length < count) {
-    const real = nextFromRoster();
+    const real = rosterDraw.pop() ?? null;
     const org = real
       ? { name: real.organisation ?? '', titles: [''] }
       : pick(ORGANISATIONS);
@@ -1095,12 +1104,16 @@ export function generate(count: number): SeedDelegate[] {
     out.push({
       name: `${honorific}${first} ${last}`,
       email: `${local}@${domain}`,
-      title: pick(org.titles),
-      // left blank for every row - an organisation is a specific, checkable
-      // claim, and that is true whether the name above it is invented or a
-      // real registrant's. `org` is still picked above for its title and
-      // tier, just never shown.
-      organisation: '',
+      // null for a real registrant, same reasoning as the tier above: no
+      // specific title was given for them, so none is invented.
+      title: real ? null : pick(org.titles),
+      // null for every row - an organisation is a specific, checkable claim,
+      // and that is true whether the name above it is invented or a real
+      // registrant's. `org` is still picked above for its title and tier,
+      // just never shown. Left unset (null), not filled with '' - an empty
+      // string is still a value written to the column, where null is the
+      // column actually being empty.
+      organisation: null,
       country: org.country ?? 'Nigeria',
       accessTier: tier,
       tracks: sample(TRACKS, randomInt(1, 4)),

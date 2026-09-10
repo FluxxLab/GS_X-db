@@ -199,8 +199,10 @@ export class AuthService {
     if (!delegate) return;
     // A placeholder account's password is a secret nobody holds, and its
     // email is a guess at a public mailbox that may belong to a real
-    // stranger - a reset code must never land in it.
-    if (!delegate.hasChosenPassword) return;
+    // stranger - a reset code must never land in it. The tag is checked too:
+    // a row seeded before `hasChosenPassword` existed still only carries
+    // that legacy marker, and nothing back-fills the column onto it.
+    if (!delegate.hasChosenPassword || delegate.tags?.includes('seed')) return;
     await this.otpService.requestOtp(
       email,
       'email',

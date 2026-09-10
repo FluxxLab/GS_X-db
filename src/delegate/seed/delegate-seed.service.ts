@@ -76,11 +76,12 @@ export class DelegateSeedService implements OnModuleInit, OnModuleDestroy {
       // the old `seed` tag, and nothing back-fills the new column onto it -
       // both are checked so a marker change never lets the trickle recount
       // an already-seeded batch as unseeded and overshoot the target.
-      const seeded = await this.delegates
+      const seededRows = await this.delegates
         .createQueryBuilder('d')
+        .select('d.name')
         .where(`d."hasChosenPassword" = false OR 'seed' = ANY(d.tags)`)
-        .getCount();
-      if (seeded >= this.target) {
+        .getMany();
+      if (seededRows.length >= this.target) {
         this.logger.log(`seed target ${this.target} reached; stopping`);
         this.onModuleDestroy();
         return false;
@@ -97,7 +98,11 @@ export class DelegateSeedService implements OnModuleInit, OnModuleDestroy {
       );
       if (lock !== 'OK') return false;
 
-      const [row] = generate(1);
+      // a roster name already used by any previous run - this process's own
+      // earlier ticks, an older run before a restart, or the CLI script -
+      // must never be drawn again
+      const usedNames = new Set(seededRows.map((d) => d.name));
+      const [row] = generate(1, usedNames);
       await this.delegates.save(
         this.delegates.create({
           ...row,
@@ -109,7 +114,9 @@ export class DelegateSeedService implements OnModuleInit, OnModuleDestroy {
           avatarUrl: null,
         }),
       );
-      this.logger.log(`seeded ${row.name} (${seeded + 1}/${this.target})`);
+      this.logger.log(
+        `seeded ${row.name} (${seededRows.length + 1}/${this.target})`,
+      );
       return true;
     } catch (e) {
       this.logger.warn(`seed tick failed: ${e}`);

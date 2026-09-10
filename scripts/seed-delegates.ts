@@ -67,11 +67,16 @@ async function main() {
     return;
   }
 
-  const existing = await repo
+  const existingSeeded = await repo
     .createQueryBuilder('d')
+    .select('d.name')
     .where(isSeeded)
-    .getCount();
-  const rows = generate(count);
+    .getMany();
+  // a roster name any earlier run already used - this script before, or the
+  // trickle service - must never be handed out again; generate() has no
+  // memory of its own between process runs, so this is the only thing
+  // stopping two separate runs picking the same real registrant twice
+  const rows = generate(count, new Set(existingSeeded.map((d) => d.name)));
   // one unguessable secret for the batch - these accounts are scenery, not logins
   const passwordHash = await bcrypt.hash(randomBytes(32).toString('hex'), 10);
   const entities = rows.map((r) =>
@@ -87,7 +92,7 @@ async function main() {
   );
   await repo.save(entities, { chunk: 50 });
   console.log(
-    `inserted ${entities.length} seeded delegate(s); ${existing} were already there. Purge with --purge.`,
+    `inserted ${entities.length} seeded delegate(s); ${existingSeeded.length} were already there. Purge with --purge.`,
   );
   await dataSource.destroy();
 }
