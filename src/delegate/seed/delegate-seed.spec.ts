@@ -49,10 +49,11 @@ describe('generate', () => {
     }
   });
 
-  it('is entirely Nigerian, mostly standard, some press, few VIP', () => {
+  it('sets no country, mostly standard, some press, few VIP', () => {
     const press = rows.filter((r) => r.accessTier === AccessTier.PRESS).length;
     const vip = rows.filter((r) => r.accessTier === AccessTier.VIP).length;
-    for (const r of rows) expect(r.country).toBe('Nigeria');
+    // like organisation: a real delegate has none, so a seeded one must not
+    for (const r of rows) expect(r.country).toBeNull();
     expect(press).toBeGreaterThan(0);
     expect(vip).toBeLessThan(rows.length / 10);
     expect(

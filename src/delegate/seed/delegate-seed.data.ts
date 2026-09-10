@@ -12,8 +12,10 @@
  * never shown: it is a specific, checkable claim, and organisation is left
  * blank on every row for that reason - real registrant or invented alike.
  *
- * What a delegate sees of another delegate is name, title, country and an
- * avatar - so those are the fields that have to read as real. Every delegate
+ * What a delegate sees of another delegate is name, title and an avatar -
+ * so those are the fields that have to read as real. Country is left unset,
+ * like organisation: a real self-registered delegate has none either, and a
+ * seeded row must not carry a field the real ones do not. Every delegate
  * here is Nigerian, on a Nigerian public mail domain - the mix a real gender
  * summit in Abuja actually draws.
  *
@@ -1024,7 +1026,8 @@ export interface SeedDelegate {
   title: string | null;
   /** Always null - see the comment where this is set below. */
   organisation: string | null;
-  country: string;
+  /** Always null - a real self-registered delegate has none either. */
+  country: string | null;
   accessTier: AccessTier;
   tracks: string[];
   interests: string[];
@@ -1114,7 +1117,7 @@ export function generate(
       // string is still a value written to the column, where null is the
       // column actually being empty.
       organisation: null,
-      country: org.country ?? 'Nigeria',
+      country: null,
       accessTier: tier,
       tracks: sample(TRACKS, randomInt(1, 4)),
       interests: sample(INTERESTS, randomInt(2, 6)),
