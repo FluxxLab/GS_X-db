@@ -1,18 +1,21 @@
 /**
- * Plausible Nigerian delegates for a directory that has to look lived-in
- * before it is.
+ * Delegates for a directory that has to look lived-in before it is.
+ *
+ * `generate` draws from two sources. First, REAL_ROSTER below - actual GIS-26
+ * registrants, name and organisation only, exhausted before anyone is
+ * invented (see the note on REAL_ROSTER for what that trade-off costs).
+ * Once it runs out, the rest are fully synthetic: names assembled per region
+ * so first name and surname agree - a Yoruba first name with a Kanuri
+ * surname is the kind of thing a Nigerian reader notices at once - with an
+ * organisation, title, tier, tracks and interests invented to match.
  *
  * What a delegate sees of another delegate is name, organisation, title,
  * country and an avatar - so those are the fields that have to read as real.
- * What only the system sees keeps them honest: every row carries the tag
- * `seed`, which no audience segment matches, so seeded accounts never get a
- * push and can be purged in one query; emails sit on the reserved `.invalid`
- * TLD, which can never be delivered to or collide with a real person; and
- * the password hash is of a secret nobody holds.
- *
- * Names are assembled per region so first name and surname agree - a Yoruba
- * first name with a Kanuri surname is the kind of thing a Nigerian reader
- * notices at once.
+ * What only the system sees keeps every row traceable: each one carries the
+ * tag `seed`, which no audience segment matches, so it never gets a push and
+ * can be purged in one query; the email sits on a public domain in a shape a
+ * real registrant would use, but the password hash is of a secret nobody
+ * holds, so the account itself cannot be signed into.
  */
 import { randomInt } from 'crypto';
 import { AccessTier } from '../entities/delegate.entity';
@@ -962,6 +965,176 @@ const slug = (s: string) =>
     .replace(/[^a-zA-Z]/g, '')
     .toLowerCase();
 
+/**
+ * Actual GIS-26 registrants, name and organisation only - the id column the
+ * registration export carried is dropped, since it means nothing here and
+ * would only invite treating these rows as more official than they are.
+ *
+ * These are real people, so nothing about them is invented beyond what
+ * `generate` has to invent for every row (an email, a tier, tracks and
+ * interests) - no job title is fabricated for them, unlike the synthetic
+ * pool below, because we were not given one and a specific title is a
+ * specific claim about a real person.
+ *
+ * The gap this leaves: the email is fabricated, so if one of these people
+ * later self-registers with their real address, the two accounts will not
+ * match and both will exist side by side. There is no clean fix for that
+ * short of an invite-code registration list keyed to their real email, which
+ * this data does not have. Before the directory goes in front of delegates,
+ * either reconcile these rows against real self-registrations by hand or
+ * purge them with the `seed` tag.
+ */
+const REAL_ROSTER: { name: string; organisation?: string }[] = [
+  { name: 'Maryam Abdallah', organisation: 'Udama Initiative for Women' },
+  { name: 'Michael Akanji', organisation: 'Heartland Alliance' },
+  { name: 'Emmanuella Alli' },
+  {
+    name: 'Yetunde Bawa-Allah Saliu',
+    organisation: 'Eco-Clean Active Initiatives',
+  },
+  { name: 'Halleluia Jeremy Ekele', organisation: 'Virexa Diagnostics' },
+  { name: 'Jamila Abubakar', organisation: 'Adijocy Global Service Ltd' },
+  {
+    name: 'Blessed Hamed-Musa',
+    organisation: "Women's Technology Empowerment Centre",
+  },
+  {
+    name: 'Safiyya Lawal Danmusa',
+    organisation: 'Centre for Gender Studies, FUDMA',
+  },
+  { name: 'Cynthia Olise', organisation: 'Manufacturing' },
+  { name: 'Obiajuru Gloria Olise', organisation: 'FIWON' },
+  { name: 'Olivia Olise', organisation: 'Jade Olise Foundation' },
+  { name: 'Judith Olise', organisation: 'Jade Olise Foundation' },
+  { name: 'Gabriel Onyebuolise', organisation: 'Chanja Datti Limited' },
+  { name: 'Maryam Abdulkarim', organisation: 'Ecosmart AI and Innovation Ltd' },
+  { name: 'Maryam Abdullahi', organisation: 'Radio Nigeria' },
+  {
+    name: 'Farida Abdulkareem',
+    organisation: 'Raw Materials Research and Development Council',
+  },
+  { name: 'Fatima Abdulkareem Buba', organisation: 'NIRSAL' },
+  {
+    name: 'Fatimah Abubakar',
+    organisation: "Udama Initiative for Women's Empowerment",
+  },
+  {
+    name: 'Haleemah Abubakar',
+    organisation: 'Udama Women Empowerment Initiative',
+  },
+  {
+    name: 'Fauziya Abubakar Kure',
+    organisation: 'Women Advocating for Gender Solutions and Mentorship',
+  },
+  { name: 'Simisolaoluwa Aladeitan' },
+  { name: 'Simi John Dalyop', organisation: 'Bincike International' },
+  { name: 'Nafisat Kasim' },
+  {
+    name: 'Miranda Nkasi',
+    organisation:
+      'The Minkasi Rural Development for Women and Youth Initiative',
+  },
+  { name: 'Firdaus Abdullahi', organisation: 'Girls In Diplomacy' },
+  { name: 'Sakeenah Ajanah', organisation: 'Alfijr Foundation' },
+  { name: 'Janet Alabede', organisation: 'Ability Centre' },
+  { name: 'Grace Agbogidi', organisation: 'Teach Extra Initiative' },
+  { name: 'Joy Agida', organisation: 'National Hospital' },
+  {
+    name: 'Gideon Dunioh',
+    organisation: 'Veritas University Alumni Association',
+  },
+  {
+    name: 'Isah Gidado',
+    organisation: 'Kauna Human Capital Development Initiative',
+  },
+  { name: 'Esele Abhulimen', organisation: 'National Assembly' },
+  {
+    name: 'Oluwaseyi Adeolowu',
+    organisation:
+      'Women’s Initiative for Stability Health and Empowerment (WISE-H)',
+  },
+  { name: 'Mujidat Agbabiaka', organisation: 'Nigerian Women Trust Fund' },
+  {
+    name: 'Osayuwamen Aladeselu',
+    organisation: 'The Diamond Circle and Synergy Ltd',
+  },
+  {
+    name: 'Alex Amiolemen',
+    organisation:
+      'Initiative for Gender Equality and Sexual Reproductive Health',
+  },
+  {
+    name: 'Adebimpe Abodunde',
+    organisation: 'Centre for Journalism Innovation and Development',
+  },
+  { name: 'Mubaraq Adebimpe', organisation: 'Atiba University' },
+  {
+    name: 'Adebimpe Adegoke',
+    organisation: 'Edupsyche Special Educational Consult',
+  },
+  { name: 'Ibim Harry', organisation: 'DLV' },
+  {
+    name: 'Chiabi Martin Sam',
+    organisation: 'Grace Charitable and Rehabilitation Organization (GRACARO)',
+  },
+  { name: 'Miracle Eze', organisation: 'Federal Ministry of Health' },
+  {
+    name: 'Mary-Jane Ukaegbu',
+    organisation: 'Resource Conservation Development Initiative',
+  },
+  { name: 'Mabum Kwasen', organisation: 'Public & Private Development Centre' },
+  { name: 'Saratu Abel Buba', organisation: 'NERIVA Initiative' },
+  { name: 'Riana Adams Sabadash', organisation: 'Femme Au Pluriel' },
+  { name: 'George Asabor', organisation: 'AXA Mansard Insurance Plc' },
+  { name: 'Mohammed Sarki Bello', organisation: 'Nigeria for Women Project' },
+  {
+    name: 'Sarah Bentu',
+    organisation: 'Ecosystem Coordination Strategic Unit (ECSU-ID4D)',
+  },
+  { name: 'Ibrahim Abdulmumin' },
+  { name: 'Ibrahim Adebayo', organisation: 'Native Bridge Empire' },
+  {
+    name: 'Moshood Adeyemo',
+    organisation: 'God Chasers Christian Resources Center',
+  },
+  { name: 'Basirah Balogun', organisation: "Sirah's Nigeria Limited" },
+  {
+    name: 'Yasir Muhammad Aliyu',
+    organisation: 'Foundation for Youth Awakening and Empowerment (FOYAE)',
+  },
+  { name: 'Nusirat Tijjani', organisation: 'Women Peace Revival' },
+  {
+    name: 'Nasir Umar Kassim',
+    organisation: 'Federal Ministry of Health and Social Welfare',
+  },
+  {
+    name: 'Zainab Ajimi Badu',
+    organisation: 'Future Resilience and Development Foundation',
+  },
+  { name: 'Joycelyn Bijimi', organisation: 'FACT' },
+  {
+    name: 'Iko-Ojo Charity Ejima',
+    organisation: 'IMH Shelter & Investment Ltd',
+  },
+  { name: 'Jennifer Hilejime', organisation: 'Execution Edge Limited' },
+  { name: 'Dorcas Jim', organisation: 'French with Madame Anthonia' },
+  { name: 'Goodness James', organisation: 'Project 29 Foundation' },
+  { name: 'Oluwakemi Joseph' },
+  { name: 'Sherifat Adegunlola', organisation: 'Edge Social Impact Partners' },
+  { name: 'Selimat Olayemi Akinwale', organisation: 'Freelancing' },
+  { name: 'Halima Alhassan', organisation: 'Federal Ministry of Education' },
+  {
+    name: 'Happiness Echeya',
+    organisation: 'South Atlantic Petroleum Medical Centre',
+  },
+  { name: 'Happiness Nehemiah', organisation: 'Pad-Up Creation Limited' },
+  {
+    name: 'Abayomi Tunji Olatunji',
+    organisation: 'Entrepreneurship Development and Support Initiative',
+  },
+  { name: 'Sylvanus Udoenoh', organisation: 'CREAP Africa Initiative' },
+];
+
 export interface SeedDelegate {
   name: string;
   email: string;
@@ -974,24 +1147,39 @@ export interface SeedDelegate {
   tags: string[];
 }
 
+/** REAL_ROSTER in a random order, without replacement, for `generate` to
+ *  draw from before it falls back to inventing anyone. */
+let rosterDraw: { name: string; organisation?: string }[] | null = null;
+function nextFromRoster(): { name: string; organisation?: string } | null {
+  if (rosterDraw === null) rosterDraw = sample(REAL_ROSTER, REAL_ROSTER.length);
+  return rosterDraw.pop() ?? null;
+}
+
 export function generate(count: number): SeedDelegate[] {
   const used = new Set<string>();
   const out: SeedDelegate[] = [];
   while (out.length < count) {
-    const org = pick(ORGANISATIONS);
+    const real = nextFromRoster();
+    const org = real
+      ? { name: real.organisation ?? '', titles: [''] }
+      : pick(ORGANISATIONS);
     // a delegation from abroad carries its own country's names
     const region = (org.country && ABROAD[org.country]) || weightedRegion();
     const female = randomInt(100) < 62; // a gender summit skews that way
-    const first = pick(female ? region.first.f : region.first.m);
-    const last = pick(region.last);
-    // one delegate in twelve carries a title the way the printed list does,
-    // and only one their own region would use
+    const [realFirst, ...realRest] = real ? real.name.split(' ') : [];
+    const first = real
+      ? realFirst
+      : pick(female ? region.first.f : region.first.m);
+    const last = real ? realRest.join(' ') : pick(region.last);
+    // a real name is used exactly as given; only an invented one gets an
+    // invented honorific, since a title is a specific claim we cannot make
+    // about a real person from a name and an organisation alone
     const honorifics = region.honorifics ?? {
       f: HONORIFICS_F,
       m: HONORIFICS_M,
     };
     const honorific =
-      randomInt(12) === 0
+      !real && randomInt(12) === 0
         ? pick(female ? honorifics.f : honorifics.m) + ' '
         : '';
 
@@ -1015,9 +1203,14 @@ export function generate(count: number): SeedDelegate[] {
     const domain = randomInt(10) < 7 ? 'gmail.com' : 'ymail.com';
     used.add(local);
 
-    // VIP is rare and never at a media house; press follows the organisation
-    const tier =
-      org.tier ?? (randomInt(40) === 0 ? AccessTier.VIP : AccessTier.STANDARD);
+    // VIP is rare and never at a media house; press follows the organisation.
+    // A real person gets standard only - there is no basis in this data for
+    // a specific claim about their actual access tier, and VIP is not a
+    // cosmetic label in this app (it gates the CEO Roundtable).
+    const tier = real
+      ? AccessTier.STANDARD
+      : (org.tier ??
+        (randomInt(40) === 0 ? AccessTier.VIP : AccessTier.STANDARD));
 
     out.push({
       name: `${honorific}${first} ${last}`,

@@ -15,8 +15,6 @@ describe('generate', () => {
       expect(r.tags).toEqual([SEED_TAG]);
       expect(r.email).toMatch(/^[a-z._0-9]+@(gmail|ymail)\.com$/);
       expect(r.name.split(' ').length).toBeGreaterThanOrEqual(2);
-      expect(r.organisation).toBeTruthy();
-      expect(r.title).toBeTruthy();
       expect(r.tracks.length).toBeGreaterThanOrEqual(1);
       expect(r.interests.length).toBeGreaterThanOrEqual(2);
       expect(r.interests.length).toBeLessThanOrEqual(5);
@@ -25,6 +23,29 @@ describe('generate', () => {
 
   it('never repeats an email', () => {
     expect(new Set(rows.map((r) => r.email)).size).toBe(rows.length);
+  });
+
+  it('invents a title and organisation for a made-up delegate, and neither for a real one', () => {
+    // an empty title is how a roster-sourced row is told apart from a fully
+    // invented one - synthetic organisations never carry an empty title
+    const invented = rows.filter((r) => r.title !== '');
+    const fromRoster = rows.filter((r) => r.title === '');
+    expect(invented.length).toBeGreaterThan(0);
+    expect(fromRoster.length).toBeGreaterThan(0);
+    for (const r of invented) expect(r.organisation).toBeTruthy();
+    // a real registrant's tier is never guessed - VIP gates real access
+    for (const r of fromRoster) expect(r.accessTier).toBe(AccessTier.STANDARD);
+  });
+
+  it('draws every real registrant before it invents anyone, name intact', () => {
+    const names = new Set(rows.map((r) => r.name));
+    for (const n of [
+      'Maryam Abdallah',
+      'Sylvanus Udoenoh',
+      'Simi John Dalyop',
+    ]) {
+      expect(names.has(n)).toBe(true);
+    }
   });
 
   it('reads like a summit list: mostly Nigerian, mostly standard, some press, few VIP', () => {
