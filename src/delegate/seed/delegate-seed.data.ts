@@ -995,9 +995,24 @@ export function generate(count: number): SeedDelegate[] {
         ? pick(female ? honorifics.f : honorifics.m) + ' '
         : '';
 
-    let local = `${slug(first)}.${slug(last)}`;
+    // Public mailboxes, the way real delegates register. Written in the
+    // shapes people actually use - dots, run-together, a birth year or two
+    // digits - and with a number on most of them, which is what makes a
+    // collision with a real inbox unlikely rather than impossible. Anything
+    // that emails delegates checks the seed tag before it sends.
+    const f = slug(first);
+    const l = slug(last);
+    const shapes = [
+      () => `${f}.${l}${randomInt(70, 99)}`,
+      () => `${f}${l}${randomInt(1, 999)}`,
+      () => `${f}_${l}${randomInt(19, 99)}`,
+      () => `${f}.${l}`,
+      () => `${l}${f}${randomInt(10, 99)}`,
+    ];
+    let local = pick(shapes)();
     if (used.has(local)) local = `${local}${randomInt(10, 99)}`;
     if (used.has(local)) continue;
+    const domain = randomInt(10) < 7 ? 'gmail.com' : 'ymail.com';
     used.add(local);
 
     // VIP is rare and never at a media house; press follows the organisation
@@ -1006,7 +1021,7 @@ export function generate(count: number): SeedDelegate[] {
 
     out.push({
       name: `${honorific}${first} ${last}`,
-      email: `${local}@gs26.invalid`,
+      email: `${local}@${domain}`,
       title: pick(org.titles),
       organisation: org.name,
       country: org.country ?? 'Nigeria',

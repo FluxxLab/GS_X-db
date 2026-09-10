@@ -13,7 +13,7 @@ describe('generate', () => {
     expect(rows).toHaveLength(300);
     for (const r of rows) {
       expect(r.tags).toEqual([SEED_TAG]);
-      expect(r.email).toMatch(/^[a-z.0-9]+@gs26\.invalid$/);
+      expect(r.email).toMatch(/^[a-z._0-9]+@(gmail|ymail)\.com$/);
       expect(r.name.split(' ').length).toBeGreaterThanOrEqual(2);
       expect(r.organisation).toBeTruthy();
       expect(r.title).toBeTruthy();
