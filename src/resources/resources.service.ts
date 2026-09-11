@@ -6,6 +6,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomBytes } from 'crypto';
 import { Repository } from 'typeorm';
+import { ConfigService } from '@nestjs/config';
 import { SessionsService } from '../sessions/sessions.service';
 import { StorageService } from '../common/storage/storage.service';
 import { ParticipationService } from './participation.service';
@@ -26,7 +27,25 @@ export class ResourcesService {
     private readonly storage: StorageService,
     private readonly participation: ParticipationService,
     private readonly sessions: SessionsService,
+    private readonly config: ConfigService,
   ) {}
+
+  /**
+   * Whether a delegate has to complete the participation checklist before a
+   * certificate is issued.
+   *
+   * Off by default. The checklist was written for the days of the summit
+   * itself, when "participation" still had a chance to happen; afterwards it
+   * only stands between delegates who attended and the certificate they came
+   * for, and the organisers are better placed than a checklist to decide who
+   * earned one. Set CERTIFICATE_REQUIRE_PARTICIPATION=true to bring it back
+   * for a future event.
+   */
+  private get requiresParticipation(): boolean {
+    return (
+      this.config.get<string>('CERTIFICATE_REQUIRE_PARTICIPATION') === 'true'
+    );
+  }
 
   /**
    * The stored `url` is an S3 key for anything uploaded through the admin, and
@@ -83,15 +102,17 @@ export class ResourcesService {
      * Checked only before the first issue. Once a certificate exists it stays
      * valid regardless, so a delegate can never lose one they earned.
      */
-    const participation = await this.participation.statusFor(delegateId);
-    if (!participation.unlocked) {
-      const remaining = participation.steps
-        .filter((s) => !s.done)
-        .map((s) => s.label)
-        .join('; ');
-      throw new ForbiddenException(
-        `Complete your summit participation to unlock your certificate. Still to do: ${remaining}`,
-      );
+    if (this.requiresParticipation) {
+      const participation = await this.participation.statusFor(delegateId);
+      if (!participation.unlocked) {
+        const remaining = participation.steps
+          .filter((s) => !s.done)
+          .map((s) => s.label)
+          .join('; ');
+        throw new ForbiddenException(
+          `Complete your summit participation to unlock your certificate. Still to do: ${remaining}`,
+        );
+      }
     }
 
     return this.certificates.save(

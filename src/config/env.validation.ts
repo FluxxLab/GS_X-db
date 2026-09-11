@@ -29,6 +29,12 @@ export class EnvironmentVariables {
   @IsInt() JWT_ACCESS_TTL: number;
   @IsInt() JWT_REFRESH_TTL: number;
   @IsString() REDIS_HOST: string;
+  /**
+   * 'true' puts the participation checklist back in front of the certificate.
+   * Absent or anything else means every approved delegate can claim theirs,
+   * which is what the organisers wanted once the summit had finished.
+   */
+  @IsOptional() @IsString() CERTIFICATE_REQUIRE_PARTICIPATION?: string;
   @IsOptional() @IsString() SMTP_HOST?: string;
   @IsOptional() @IsInt() SMTP_PORT?: number;
   @IsOptional() @IsString() SMTP_USER?: string;
