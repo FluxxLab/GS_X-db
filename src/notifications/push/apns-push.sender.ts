@@ -1,7 +1,8 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Notification, Provider } from '@parse/node-apn';
-import type { PushSender, PushTarget } from './push-sender.interface';
+import type { PushData, PushSender, PushTarget } from './push-sender.interface';
+import { pushDataPayload } from './push-sender.interface';
 
 /**
  * FR-08 delivery for iOS. The app registers with getDevicePushTokenAsync,
@@ -30,7 +31,12 @@ export class ApnsPushSender implements PushSender, OnModuleDestroy {
     });
   }
 
-  async sendToTokens(targets: PushTarget[], title: string, body: string) {
+  async sendToTokens(
+    targets: PushTarget[],
+    title: string,
+    body: string,
+    data?: PushData,
+  ) {
     const tokens = targets.map((t) => t.token);
     if (tokens.length === 0) return { invalidTokens: [] };
 
@@ -42,6 +48,8 @@ export class ApnsPushSender implements PushSender, OnModuleDestroy {
     note.priority = 10;
     // a live-ops alert is worthless an hour after the fact
     note.expiry = Math.floor(Date.now() / 1000) + 3600;
+    // rides alongside the alert; the app reads it when the banner is tapped
+    note.payload = pushDataPayload(data);
 
     const res = await this.provider.send(note, tokens);
 

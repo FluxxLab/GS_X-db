@@ -1,7 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as admin from 'firebase-admin';
-import type { PushSender, PushTarget } from './push-sender.interface';
+import type { PushData, PushSender, PushTarget } from './push-sender.interface';
+import { pushDataPayload } from './push-sender.interface';
 import { App, cert } from 'firebase-admin';
 import { getMessaging } from 'firebase-admin/messaging';
 
@@ -22,7 +23,12 @@ export class FcmPushSender implements PushSender {
     });
   }
 
-  async sendToTokens(targets: PushTarget[], title: string, body: string) {
+  async sendToTokens(
+    targets: PushTarget[],
+    title: string,
+    body: string,
+    data?: PushData,
+  ) {
     const tokens = targets.map((t) => t.token);
     const invalidTokens: string[] = [];
 
@@ -35,6 +41,8 @@ export class FcmPushSender implements PushSender {
           title,
           body,
         },
+        // FCM only carries string values here, hence pushDataPayload
+        data: pushDataPayload(data),
       });
 
       res.responses.forEach((r, idx) => {

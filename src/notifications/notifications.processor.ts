@@ -92,6 +92,12 @@ export class NotificationsProcessor extends WorkerHost {
       tokens,
       notification.title,
       notification.body,
+      // so a tap opens the inbox at this announcement rather than wherever
+      // the delegate happened to leave the app
+      {
+        category: notification.category ?? 'announcement',
+        notificationId: notification.id,
+      },
     );
     if (invalidTokens.length)
       await this.deviceTokens.delete({ token: In(invalidTokens) });
@@ -144,6 +150,10 @@ export class NotificationsProcessor extends WorkerHost {
         tokens,
         data.title,
         data.body,
+        {
+          category: data.category ?? 'announcement',
+          notificationId: notification.id,
+        },
       );
       if (invalidTokens.length)
         await this.deviceTokens.delete({ token: In(invalidTokens) });

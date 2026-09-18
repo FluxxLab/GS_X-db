@@ -10,10 +10,37 @@ export interface PushTarget {
   platform: string;
 }
 
+/**
+ * What the app needs to open the right screen when someone taps the banner.
+ *
+ * Strings only, and few of them: APNs and FCM both cap the payload, and both
+ * flatten values to strings on the way through, so anything richer would be
+ * lost or truncated in transit. Without this the app can only ever open where
+ * it was last left, which is why a tap used to do nothing useful.
+ */
+export interface PushData {
+  /** Why this was sent: 'announcement', 'network', 'session', 'trivia'. */
+  category?: string;
+  /** The row in the delegate's inbox, when there is one. */
+  notificationId?: string;
+  /** The session this is about, when it is about one. */
+  sessionId?: string;
+}
+
 export interface PushSender {
   sendToTokens(
     targets: PushTarget[],
     title: string,
     body: string,
+    data?: PushData,
   ): Promise<{ invalidTokens: string[] }>;
+}
+
+/** Drops empty values and stringifies the rest, as both transports require. */
+export function pushDataPayload(data?: PushData): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(data ?? {})
+      .filter(([, v]) => v !== undefined && v !== null && v !== '')
+      .map(([k, v]) => [k, String(v)]),
+  );
 }
