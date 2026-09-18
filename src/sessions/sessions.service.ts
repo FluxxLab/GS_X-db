@@ -339,9 +339,11 @@ export class SessionsService implements OnApplicationBootstrap {
   }
 
   async create(dto: CreateSessionDto, announce = true): Promise<Session> {
-    const { speakerIds, ...data } = dto;
+    const { speakerIds, videoUrl, ...data } = dto;
     const session = this.sessions.create({
       ...data,
+      // an operator clearing the box sends '', which should mean "no video"
+      videoUrl: videoUrl?.trim() ? videoUrl.trim() : null,
       startsAt: new Date(dto.startsAt),
       endsAt: new Date(dto.endsAt),
       speakers: speakerIds?.length
@@ -386,9 +388,22 @@ export class SessionsService implements OnApplicationBootstrap {
 
   async update(id: string, dto: UpdateSessionDto): Promise<Session> {
     const session = await this.findById(id);
-    const { speakerIds, startsAt, endsAt, status, shiftFollowing, ...data } =
-      dto;
+    const {
+      speakerIds,
+      startsAt,
+      endsAt,
+      status,
+      shiftFollowing,
+      videoUrl,
+      ...data
+    } = dto;
     Object.assign(session, data);
+
+    // sent as '' when cleared, absent when untouched - the two mean different
+    // things and only the first should wipe the stored link
+    if (videoUrl !== undefined) {
+      session.videoUrl = videoUrl.trim() ? videoUrl.trim() : null;
+    }
 
     if (startsAt) session.startsAt = new Date(startsAt);
     if (endsAt) session.endsAt = new Date(endsAt);

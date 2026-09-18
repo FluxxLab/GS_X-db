@@ -5,10 +5,12 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsUrl,
   Matches,
   Max,
   MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
 import { SessionTrack, SessionStatus } from '../entities/session.entity';
 
@@ -75,6 +77,21 @@ export class CreateSessionDto {
   @ApiPropertyOptional()
   @IsOptional()
   audience?: string;
+
+  /**
+   * Validated as a URL rather than a YouTube id so the field survives a
+   * change of video platform. Empty string is accepted and stored as null,
+   * because that is what an operator clearing the box actually sends.
+   */
+  @ApiPropertyOptional({
+    example: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    description: 'Link to the session recording or live stream',
+  })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== '' && value !== null)
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
+  @MaxLength(500)
+  videoUrl?: string;
 
   @ApiPropertyOptional({
     type: [String],

@@ -88,6 +88,18 @@ export class Session {
   @Column({ type: 'varchar', length: 255 })
   room: string;
 
+  /**
+   * A recording or live stream for this session, as a link.
+   *
+   * A URL rather than a provider id: the programme has outlived one video
+   * platform already, and storing "the link the organiser was given" means
+   * swapping YouTube for Vimeo later is a parser change in one file rather
+   * than a migration. The client decides what it can play; anything it does
+   * not recognise it offers as a link.
+   */
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  videoUrl: string | null;
+
   @ManyToMany(() => Speaker, { cascade: false })
   @JoinTable({ name: 'session_speakers' })
   speakers: Speaker[];
