@@ -26,7 +26,12 @@ export class NotificationsService {
 
   async announce(dto: CreateNotificationDto): Promise<Notification> {
     const notification = await this.notifications.save(
-      this.notifications.create(dto),
+      this.notifications.create({
+        ...dto,
+        // the composer sends '' for a target the operator left alone
+        sessionId: dto.sessionId?.trim() ? dto.sessionId.trim() : null,
+        linkUrl: dto.linkUrl?.trim() ? dto.linkUrl.trim() : null,
+      }),
     );
 
     await this.queue.add('dispatch', { notificationId: notification.id });

@@ -1,5 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsEnum,
+  IsOptional,
+  IsString,
+  IsUrl,
+  IsUUID,
+  MaxLength,
+  ValidateIf,
+} from 'class-validator';
 import { AudienceSegment } from '../entities/notification.entity';
 
 export class CreateNotificationDto {
@@ -24,4 +32,19 @@ export class CreateNotificationDto {
   @ApiProperty({ enum: AudienceSegment, example: AudienceSegment.ALL })
   @IsEnum(AudienceSegment)
   segment: AudienceSegment;
+
+  /** The session this announcement is about; opens in the app when tapped. */
+  @ApiPropertyOptional({ description: 'Session this announcement points at' })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== '' && value !== null)
+  @IsUUID()
+  sessionId?: string;
+
+  /** An address outside the app, opened in the browser when tapped. */
+  @ApiPropertyOptional({ example: 'https://policycentre.org/communique' })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== '' && value !== null)
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
+  @MaxLength(500)
+  linkUrl?: string;
 }

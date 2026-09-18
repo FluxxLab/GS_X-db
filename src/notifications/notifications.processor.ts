@@ -15,6 +15,8 @@ export interface DirectJob {
   title: string;
   body: string;
   category: string | null;
+  /** The session this is about, so the tap opens it (reminders). */
+  sessionId?: string | null;
 }
 
 @Processor('notifications')
@@ -97,6 +99,10 @@ export class NotificationsProcessor extends WorkerHost {
       {
         category: notification.category ?? 'announcement',
         notificationId: notification.id,
+        ...(notification.sessionId
+          ? { sessionId: notification.sessionId }
+          : {}),
+        ...(notification.linkUrl ? { linkUrl: notification.linkUrl } : {}),
       },
     );
     if (invalidTokens.length)
@@ -112,6 +118,9 @@ export class NotificationsProcessor extends WorkerHost {
         body: notification.body,
         category: notification.category,
         segment: notification.segment,
+        // so a row that arrives live is tappable like one that was fetched
+        sessionId: notification.sessionId,
+        linkUrl: notification.linkUrl,
       },
     );
   }
@@ -127,6 +136,7 @@ export class NotificationsProcessor extends WorkerHost {
         title: data.title,
         body: data.body,
         category: data.category,
+        sessionId: data.sessionId ?? null,
         delegateId: data.delegateId,
         // stamped here rather than after the push: the row is the delegate's
         // copy, and it should survive in their inbox even if no device of
@@ -153,6 +163,7 @@ export class NotificationsProcessor extends WorkerHost {
         {
           category: data.category ?? 'announcement',
           notificationId: notification.id,
+          ...(data.sessionId ? { sessionId: data.sessionId } : {}),
         },
       );
       if (invalidTokens.length)

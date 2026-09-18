@@ -131,9 +131,25 @@ export class SessionsService implements OnApplicationBootstrap {
    * the push goes out from the worker, and a failure to queue it must not
    * fail the edit the operator just made.
    */
-  private broadcast(title: string, body: string, category: string): void {
+  /**
+   * A notification about a session carries the session, so a tap opens it.
+   * Without the id the app has nothing to open and the row is dead text -
+   * which is how "Now live in Main Hall" shipped for the whole summit.
+   */
+  private broadcast(
+    title: string,
+    body: string,
+    category: string,
+    sessionId?: string,
+  ): void {
     void this.notifications
-      .announce({ title, body, segment: AudienceSegment.ALL, category })
+      .announce({
+        title,
+        body,
+        segment: AudienceSegment.ALL,
+        category,
+        sessionId,
+      })
       .catch((e) =>
         this.logger.warn(`push not queued for "${title}" (${category}): ${e}`),
       );
@@ -362,6 +378,7 @@ export class SessionsService implements OnApplicationBootstrap {
         saved.title,
         `Added to the programme · ${SessionsService.slot(saved)}`,
         'session-created',
+        saved.id,
       );
     }
     return saved;
@@ -454,12 +471,14 @@ export class SessionsService implements OnApplicationBootstrap {
         saved.title,
         `Schedule change · ${SessionsService.slot(saved)}`,
         'session-updated',
+        saved.id,
       );
       for (const s of pushed) {
         this.broadcast(
           s.title,
           `Schedule change · ${SessionsService.slot(s)}`,
           'session-updated',
+          s.id,
         );
       }
     }
@@ -561,7 +580,12 @@ export class SessionsService implements OnApplicationBootstrap {
     // push goes out from the worker, and a failure to queue it must not
     // fail the status change the operator just made.
     if (wentLive) {
-      this.broadcast(saved.title, `Now live in ${saved.room}`, 'session-live');
+      this.broadcast(
+        saved.title,
+        `Now live in ${saved.room}`,
+        'session-live',
+        saved.id,
+      );
     }
     // a session that is live or over no longer "starts in 15 minutes"
     if (status !== SessionStatus.SCHEDULED) this.cancelReminder(id);

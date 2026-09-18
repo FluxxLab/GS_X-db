@@ -25,6 +25,8 @@ export interface PushData {
   notificationId?: string;
   /** The session this is about, when it is about one. */
   sessionId?: string;
+  /** An address outside the app, when the announcement points at one. */
+  linkUrl?: string;
 }
 
 export interface PushSender {

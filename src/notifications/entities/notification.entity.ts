@@ -43,6 +43,23 @@ export class Notification {
   @Column({ type: 'varchar', length: 255, nullable: true })
   category: string | null;
 
+  /**
+   * Where this announcement leads, if anywhere.
+   *
+   * Two fields rather than one generic link: a session is something the apps
+   * can open natively and keep the delegate inside the app, while a URL has to
+   * leave it. Collapsing both into one string would mean every client guessing
+   * which it had been handed.
+   *
+   * Most announcements have neither, and that is a legitimate state: "lunch is
+   * served" is the whole message.
+   */
+  @Column({ type: 'uuid', nullable: true })
+  sessionId: string | null;
+
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  linkUrl: string | null;
+
   @Column({ type: 'timestamptz', nullable: true })
   sentAt: Date | null;
 

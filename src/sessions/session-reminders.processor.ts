@@ -65,6 +65,7 @@ export class SessionRemindersProcessor extends WorkerHost {
           title: session.title,
           body: `Starts in 15 minutes · ${session.room}`,
           category: 'session-reminder',
+          sessionId: session.id,
         },
       })),
     );
